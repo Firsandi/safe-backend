@@ -27,12 +27,15 @@ func main() {
 	setDefaults()
 
 	// Connection string
-	dsn := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		os.Getenv("DB_HOST"), os.Getenv("DB_PORT"),
-		os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD"),
-		os.Getenv("DB_NAME"),
-	)
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = fmt.Sprintf(
+			"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+			os.Getenv("DB_HOST"), os.Getenv("DB_PORT"),
+			os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD"),
+			os.Getenv("DB_NAME"),
+		)
+	}
 
 	var db *sqlx.DB
 	var err error
