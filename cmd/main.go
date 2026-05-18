@@ -16,7 +16,9 @@ import (
 	_ "github.com/lib/pq"
 
 	"safe-backend/internal/handler"
+	"safe-backend/internal/middleware"
 	"safe-backend/internal/repository"
+	"safe-backend/internal/service"
 )
 
 func main() {
@@ -62,7 +64,16 @@ func main() {
 
 	// Wire dependencies
 	userRepo := repository.NewUserRepository(db)
+	medicalRepo := repository.NewMedicalProfileRepository(db)
+	contactRepo := repository.NewEmergencyContactRepository(db)
+	sosRepo := repository.NewSosRepository(db)
+
+	notifierService := service.GetNotificationService()
+
 	authHandler := handler.NewAuthHandler(userRepo)
+	profileHandler := handler.NewMedicalProfileHandler(medicalRepo)
+	contactHandler := handler.NewEmergencyContactHandler(contactRepo)
+	sosHandler := handler.NewSosHandler(sosRepo, medicalRepo, contactRepo, userRepo, notifierService)
 
 	// Router
 	r := gin.Default()
@@ -82,6 +93,34 @@ func main() {
 	{
 		api.POST("/register", authHandler.Register)
 		api.POST("/login", authHandler.Login)
+
+		// Protected endpoints
+		protected := api.Group("")
+		protected.Use(middleware.AuthMiddleware())
+		{
+			// Basic Profile
+			protected.PUT("/profile", authHandler.UpdateProfile)
+
+			// Medical Profile
+			protected.GET("/profile/medical", profileHandler.GetMedicalProfile)
+			protected.POST("/profile/medical", profileHandler.UpsertMedicalProfile)
+
+			// Emergency Contacts & User Search
+			protected.GET("/users/search", contactHandler.SearchUsers)
+			protected.POST("/contacts", contactHandler.AddContact)
+			protected.GET("/contacts", contactHandler.ListContacts)
+			protected.GET("/contacts/requests", contactHandler.ListPendingRequests)
+			protected.POST("/contacts/requests/:id/accept", contactHandler.AcceptRequest)
+			protected.POST("/contacts/requests/:id/reject", contactHandler.RejectRequest)
+
+			// SOS & Tracking
+			protected.POST("/sos/trigger", sosHandler.TriggerSos)
+			protected.POST("/sos/:id/resolve", sosHandler.ResolveSos)
+			protected.POST("/sos/:id/track", sosHandler.TrackLocation)
+			protected.GET("/sos/:id", sosHandler.GetSosDetail)
+			protected.GET("/sos/history/sent", sosHandler.GetSentHistory)
+			protected.GET("/sos/history/received", sosHandler.GetReceivedHistory)
+		}
 	}
 
 	port := os.Getenv("PORT")
@@ -90,24 +129,38 @@ func main() {
 }
 
 func loadEnv(filename string) {
-	file, err := os.Open(filename)
+	dir, err := os.Getwd()
 	if err != nil {
-		return // .env not found, skip
+		return
 	}
-	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
-			continue
+	for {
+		target := filepath.Join(dir, filename)
+		file, err := os.Open(target)
+		if err == nil {
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				parts := strings.SplitN(line, "=", 2)
+				if len(parts) == 2 {
+					key := strings.TrimSpace(parts[0])
+					val := strings.TrimSpace(parts[1])
+					os.Setenv(key, val)
+				}
+			}
+			log.Printf("Berhasil memuat file konfigurasi dari: %s", target)
+			return
 		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) == 2 {
-			key := strings.TrimSpace(parts[0])
-			val := strings.TrimSpace(parts[1])
-			os.Setenv(key, val)
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break // Reached filesystem root
 		}
+		dir = parent
 	}
 }
 
@@ -136,14 +189,35 @@ func setDefaults() {
 }
 
 func runMigrations(db *sqlx.DB) error {
-	migrationDir := "migration"
-	files, err := os.ReadDir(migrationDir)
+	dir, err := os.Getwd()
 	if err != nil {
-		migrationDir = "backend/migration"
-		files, err = os.ReadDir(migrationDir)
-		if err != nil {
-			return fmt.Errorf("could not read migration directory: %v", err)
+		return err
+	}
+
+	var migrationDir string
+	var files []os.DirEntry
+
+	for {
+		target := filepath.Join(dir, "migration")
+		var errRead error
+		files, errRead = os.ReadDir(target)
+		if errRead == nil {
+			migrationDir = target
+			break
 		}
+
+		targetFallback := filepath.Join(dir, "backend/migration")
+		files, errRead = os.ReadDir(targetFallback)
+		if errRead == nil {
+			migrationDir = targetFallback
+			break
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return fmt.Errorf("could not find migration or backend/migration directory in any parent path")
+		}
+		dir = parent
 	}
 
 	var sqlFiles []string

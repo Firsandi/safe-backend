@@ -85,6 +85,60 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, model.AuthResponse{Token: token, User: *user})
 }
 
+func (h *AuthHandler) UpdateFcmToken(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Akses ditolak: token tidak valid"})
+		return
+	}
+
+	var req struct {
+		FcmToken string `json:"fcm_token" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.repo.UpdateFcmToken(userID, req.FcmToken); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengupdate token FCM"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "FCM Token berhasil diperbarui"})
+}
+
+func (h *AuthHandler) UpdateProfile(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Akses ditolak: token tidak valid"})
+		return
+	}
+
+	var req struct {
+		Name         string `json:"name" binding:"required"`
+		PhoneNumber  string `json:"phone_number" binding:"required"`
+		ProfileImage string `json:"profile_image"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.repo.UpdateProfile(userID, req.Name, req.PhoneNumber, req.ProfileImage); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memperbarui profil"})
+		return
+	}
+
+	user, err := h.repo.FindByID(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Profil diperbarui tetapi gagal memuat ulang data"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Profil berhasil diperbarui", "user": user})
+}
+
 func generateToken(userID string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,

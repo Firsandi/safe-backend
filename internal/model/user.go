@@ -3,13 +3,14 @@ package model
 import "time"
 
 type User struct {
-	UserID      string    `db:"user_id"      json:"user_id"`
-	Name        string    `db:"name"         json:"name"`
-	Email       string    `db:"email"        json:"email"`
-	Password    string    `db:"password"     json:"-"`
-	PhoneNumber string    `db:"phone_number" json:"phone_number"`
-	FcmToken    *string   `db:"fcm_token"    json:"fcm_token,omitempty"`
-	CreatedAt   time.Time `db:"created_at"   json:"created_at"`
+	UserID       string    `db:"user_id"       json:"user_id"`
+	Name         string    `db:"name"          json:"name"`
+	Email        string    `db:"email"         json:"email"`
+	Password     string    `db:"password"      json:"-"`
+	PhoneNumber  string    `db:"phone_number"  json:"phone_number"`
+	ProfileImage string    `db:"profile_image" json:"profile_image"`
+	FcmToken     *string   `db:"fcm_token"     json:"fcm_token,omitempty"`
+	CreatedAt    time.Time `db:"created_at"    json:"created_at"`
 }
 
 type RegisterRequest struct {
