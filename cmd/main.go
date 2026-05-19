@@ -128,7 +128,7 @@ func main() {
 
 	port := os.Getenv("PORT")
 	log.Printf("Safe backend is running natively on :%s", port)
-	r.Run(":" + port)
+	r.Run("0.0.0.0:" + port)
 }
 
 func loadEnv(filename string) {
