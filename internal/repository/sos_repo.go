@@ -93,6 +93,26 @@ func (r *SosRepository) GetEventDetail(sosID string) (*model.SosEventDetailDTO, 
 	}
 	detail.TrackingPoints = trackingPoints
 
+	// Fetch responders
+	var responders []model.SosAcknowledgement
+	err = r.db.Select(&responders, `
+		SELECT 
+			sa.acknowledgement_id, 
+			sa.sos_id, 
+			sa.responder_id, 
+			u.name AS responder_name, 
+			sa.acknowledged_at 
+		FROM sos_acknowledgements sa
+		JOIN users u ON sa.responder_id = u.user_id
+		WHERE sa.sos_id=$1 
+		ORDER BY sa.acknowledged_at ASC`, 
+		sosID,
+	)
+	if err != nil {
+		responders = []model.SosAcknowledgement{}
+	}
+	detail.Responders = responders
+
 	return &detail, nil
 }
 
@@ -173,4 +193,15 @@ func (r *SosRepository) AddTrackingPoint(t *model.SosTracking) error {
 		t.SosID, t.Latitude, t.Longitude,
 	)
 	return row.Scan(&t.TrackingID, &t.RecordedAt)
+}
+
+// AcknowledgeEvent registers that a contact has seen/read the SOS incident
+func (r *SosRepository) AcknowledgeEvent(sosID, responderID string) error {
+	_, err := r.db.Exec(`
+		INSERT INTO sos_acknowledgements (sos_id, responder_id)
+		VALUES ($1, $2)
+		ON CONFLICT (sos_id, responder_id) DO NOTHING`,
+		sosID, responderID,
+	)
+	return err
 }
