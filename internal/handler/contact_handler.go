@@ -1,20 +1,32 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"safe-backend/internal/model"
 	"safe-backend/internal/repository"
+	"safe-backend/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
 
 type EmergencyContactHandler struct {
-	repo *repository.EmergencyContactRepository
+	repo     *repository.EmergencyContactRepository
+	userRepo *repository.UserRepository
+	notifier service.NotificationService
 }
 
-func NewEmergencyContactHandler(repo *repository.EmergencyContactRepository) *EmergencyContactHandler {
-	return &EmergencyContactHandler{repo: repo}
+func NewEmergencyContactHandler(
+	repo *repository.EmergencyContactRepository,
+	userRepo *repository.UserRepository,
+	notifier service.NotificationService,
+) *EmergencyContactHandler {
+	return &EmergencyContactHandler{
+		repo:     repo,
+		userRepo: userRepo,
+		notifier: notifier,
+	}
 }
 
 // SearchUsers handles search queries by phone or email
@@ -70,6 +82,22 @@ func (h *EmergencyContactHandler) AddContact(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Send Push Notification in background
+	go func() {
+		sender, errSender := h.userRepo.FindByID(userID)
+		target, errTarget := h.userRepo.FindByID(req.TargetUserID)
+		if errSender == nil && errTarget == nil && target.FcmToken != nil && *target.FcmToken != "" {
+			title := "🤝 Permintaan Kontak Darurat"
+			body := fmt.Sprintf("%s ingin menambahkan Anda sebagai kontak darurat.", sender.Name)
+			dataPayload := map[string]string{
+				"type":        "contact_request",
+				"sender_id":   userID,
+				"sender_name": sender.Name,
+			}
+			_ = h.notifier.SendPush(*target.FcmToken, title, body, dataPayload)
+		}
+	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": "Permintaan kontak darurat berhasil dikirim"})
 }
@@ -130,9 +158,30 @@ func (h *EmergencyContactHandler) AcceptRequest(c *gin.Context) {
 		return
 	}
 
+	// Fetch requesterID to send push notification
+	requesterID, _ := h.repo.GetRequesterID(relationID)
+
 	if err := h.repo.RespondToRequest(relationID, userID, true); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Send Push Notification back to requester in background
+	if requesterID != "" {
+		go func() {
+			receiver, errReceiver := h.userRepo.FindByID(userID)
+			requester, errRequester := h.userRepo.FindByID(requesterID)
+			if errReceiver == nil && errRequester == nil && requester.FcmToken != nil && *requester.FcmToken != "" {
+				title := "✅ Permintaan Kontak Diterima"
+				body := fmt.Sprintf("%s menyetujui permintaan kontak darurat Anda.", receiver.Name)
+				dataPayload := map[string]string{
+					"type":           "contact_accepted",
+					"responder_id":   userID,
+					"responder_name": receiver.Name,
+				}
+				_ = h.notifier.SendPush(*requester.FcmToken, title, body, dataPayload)
+			}
+		}()
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Permintaan kontak darurat diterima"})

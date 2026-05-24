@@ -72,7 +72,7 @@ func main() {
 
 	authHandler := handler.NewAuthHandler(userRepo)
 	profileHandler := handler.NewMedicalProfileHandler(medicalRepo)
-	contactHandler := handler.NewEmergencyContactHandler(contactRepo)
+	contactHandler := handler.NewEmergencyContactHandler(contactRepo, userRepo, notifierService)
 	sosHandler := handler.NewSosHandler(sosRepo, medicalRepo, contactRepo, userRepo, notifierService)
 
 	// Router

@@ -83,6 +83,13 @@ func (r *EmergencyContactRepository) RespondToRequest(relationID, receiverID str
 	}
 }
 
+// GetRequesterID fetches the requester_id of a specific contact relation
+func (r *EmergencyContactRepository) GetRequesterID(relationID string) (string, error) {
+	var requesterID string
+	err := r.db.Get(&requesterID, "SELECT requester_id FROM emergency_contacts WHERE contact_id=$1", relationID)
+	return requesterID, err
+}
+
 // GetContacts returns a list of contacts who have accepted the user's request (User sends SOS to them)
 func (r *EmergencyContactRepository) GetContacts(userID string) ([]model.ContactRequestDTO, error) {
 	var contacts []model.ContactRequestDTO
