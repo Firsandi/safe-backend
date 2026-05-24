@@ -93,6 +93,7 @@ func main() {
 	{
 		api.POST("/register", authHandler.Register)
 		api.POST("/login", authHandler.Login)
+		api.POST("/auth/google", authHandler.GoogleLogin)
 
 		// Protected endpoints
 		protected := api.Group("")
@@ -117,6 +118,7 @@ func main() {
 
 			// SOS & Tracking
 			protected.POST("/sos/trigger", sosHandler.TriggerSos)
+			protected.GET("/sos/active", sosHandler.GetActiveSos)
 			protected.POST("/sos/:id/resolve", sosHandler.ResolveSos)
 			protected.POST("/sos/:id/track", sosHandler.TrackLocation)
 			protected.POST("/sos/:id/acknowledge", sosHandler.AcknowledgeSos)
