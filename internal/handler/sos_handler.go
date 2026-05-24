@@ -172,6 +172,28 @@ func (h *SosHandler) ResolveSos(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Status SOS berhasil diperbarui", "status": req.Status})
 }
 
+// GetActiveSos checks if the current user has an active SOS event
+func (h *SosHandler) GetActiveSos(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	activeEvent, err := h.sosRepo.GetActiveEvent(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memeriksa status SOS aktif"})
+		return
+	}
+
+	if activeEvent == nil {
+		c.JSON(http.StatusOK, gin.H{"active": false, "sos_id": nil})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"active": true, "sos_id": activeEvent.SosID, "event": activeEvent})
+}
+
 // TrackLocation streams and appends new real-time GPS tracking coordinates
 func (h *SosHandler) TrackLocation(c *gin.Context) {
 	userID := c.GetString("user_id")

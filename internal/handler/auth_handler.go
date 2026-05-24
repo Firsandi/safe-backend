@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -137,6 +138,82 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Profil berhasil diperbarui", "user": user})
+}
+
+func (h *AuthHandler) GoogleLogin(c *gin.Context) {
+	var req struct {
+		IDToken string `json:"id_token"`
+		Email   string `json:"email"`
+		Name    string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var email string
+	var name string
+
+	// Jika ada ID Token asli, lakukan verifikasi keamanan Google
+	if req.IDToken != "" && req.IDToken != "simulated_token" {
+		tokenInfoUrl := fmt.Sprintf("https://oauth2.googleapis.com/tokeninfo?id_token=%s", req.IDToken)
+		resp, err := http.Get(tokenInfoUrl)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token Google tidak valid atau kedaluwarsa"})
+			return
+		}
+		defer resp.Body.Close()
+
+		var googleClaims struct {
+			Email         string `json:"email"`
+			Name          string `json:"name"`
+			EmailVerified string `json:"email_verified"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&googleClaims); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membaca data dari Google"})
+			return
+		}
+
+		if googleClaims.EmailVerified != "true" || googleClaims.Email == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Email Google belum terverifikasi"})
+			return
+		}
+		email = googleClaims.Email
+		name = googleClaims.Name
+	} else {
+		// Mode Simulasi (Fallback untuk testing lokal tanpa SHA-1 setup)
+		if req.Email == "" || req.Name == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Email dan Nama wajib diisi dalam mode simulasi"})
+			return
+		}
+		email = req.Email
+		name = req.Name
+	}
+
+	// 2. Cek/Daftarkan email di database Supabase
+	user, err := h.repo.FindByEmail(email)
+	if err != nil {
+		user = &model.User{
+			Name:        name,
+			Email:       email,
+			Password:    "", // Kosong karena autentikasi dilakukan via Google
+			PhoneNumber: "+62800000000",
+		}
+
+		if err := h.repo.Create(user); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mendaftarkan user Google ke database"})
+			return
+		}
+	}
+
+	// 3. Generate JWT Token untuk session di Flutter
+	token, err := generateToken(user.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat token sesi"})
+		return
+	}
+
+	c.JSON(http.StatusOK, model.AuthResponse{Token: token, User: *user})
 }
 
 func generateToken(userID string) (string, error) {

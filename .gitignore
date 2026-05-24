@@ -7,3 +7,8 @@ main
 *.dylib
 bin/
 vendor/
+# Firebase Credentials (SANGAT RAHASIA)
+firebase-service-account.json
+safe-app-*.json
+*.json.resolved
+*.json.resolved.*
