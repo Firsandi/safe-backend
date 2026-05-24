@@ -15,8 +15,8 @@ type MedicalProfile struct {
 
 // MedicalProfileRequest represents the request body to upsert medical details
 type MedicalProfileRequest struct {
-	BloodType    string `json:"blood_type"    binding:"required"`
-	MedicalNotes string `json:"medical_notes" binding:"required"`
+	BloodType    string `json:"blood_type"`
+	MedicalNotes string `json:"medical_notes"`
 }
 
 // EmergencyContact represents the relation between requester and receiver
