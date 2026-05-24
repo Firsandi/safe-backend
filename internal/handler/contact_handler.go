@@ -159,3 +159,25 @@ func (h *EmergencyContactHandler) RejectRequest(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Permintaan kontak darurat ditolak"})
 }
+
+// DeleteContact removes/disconnects an emergency contact
+func (h *EmergencyContactHandler) DeleteContact(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	contactID := c.Param("id")
+	if contactID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID Kontak diperlukan"})
+		return
+	}
+
+	if err := h.repo.DeleteContact(userID, contactID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Kontak darurat berhasil dihapus"})
+}

@@ -22,10 +22,13 @@ func NewMockNotificationService() *MockNotificationService {
 
 func (s *MockNotificationService) SendPush(token, title, body string, data map[string]string) error {
 	log.Printf("\n======================================================\n"+
-		"[PUSH NOTIFICATION TRIGGERED]\n"+
+		"[PUSH NOTIFICATION TRIGGERED - HIGH PRIORITY (DND BYPASS)]\n"+
 		"Target FCM Token : %s\n"+
 		"Title            : %s\n"+
 		"Body             : %s\n"+
+		"Android Channel  : emergency_channel_id\n"+
+		"Android Sound    : alarm_sound\n"+
+		"APNs Critical    : Volume=1.0, Sound=alarm_sound.caf\n"+
 		"Custom Data      : %+v\n"+
 		"======================================================\n",
 		token, title, body, data,
@@ -62,6 +65,27 @@ func (s *FcmNotificationService) SendPush(token, title, body string, data map[st
 			"notification": map[string]string{
 				"title": title,
 				"body":  body,
+			},
+			"android": map[string]interface{}{
+				"priority": "HIGH",
+				"notification": map[string]interface{}{
+					"channel_id": "emergency_channel_id",
+					"sound":      "alarm_sound",
+				},
+			},
+			"apns": map[string]interface{}{
+				"headers": map[string]string{
+					"apns-priority": "10",
+				},
+				"payload": map[string]interface{}{
+					"aps": map[string]interface{}{
+						"sound": map[string]interface{}{
+							"critical": 1,
+							"name":     "alarm_sound.caf",
+							"volume":   1.0,
+						},
+					},
+				},
 			},
 			"data": data,
 		},

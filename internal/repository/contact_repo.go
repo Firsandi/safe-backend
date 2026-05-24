@@ -253,3 +253,19 @@ func (r *EmergencyContactRepository) AddContact(requesterID, targetUserID string
 	)
 	return err
 }
+
+// DeleteContact removes an emergency contact relationship
+func (r *EmergencyContactRepository) DeleteContact(userID string, contactID string) error {
+	res, err := r.db.Exec(
+		"DELETE FROM emergency_contacts WHERE contact_id=$1 AND (requester_id=$2 OR receiver_id=$2)",
+		contactID, userID,
+	)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return errors.New("hubungan kontak darurat tidak ditemukan")
+	}
+	return nil
+}

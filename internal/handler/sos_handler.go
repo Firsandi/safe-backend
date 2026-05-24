@@ -275,3 +275,25 @@ func (h *SosHandler) GetReceivedHistory(c *gin.Context) {
 
 	c.JSON(http.StatusOK, events)
 }
+
+// AcknowledgeSos marks that a receiver/contact has read/opened the SOS
+func (h *SosHandler) AcknowledgeSos(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	sosID := c.Param("id")
+	if sosID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ID SOS diperlukan"})
+		return
+	}
+
+	if err := h.sosRepo.AcknowledgeEvent(sosID, userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengirimkan sinyal balik SOS"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Sinyal balik SOS berhasil terkirim"})
+}

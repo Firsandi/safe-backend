@@ -100,6 +100,7 @@ func main() {
 		{
 			// Basic Profile
 			protected.PUT("/profile", authHandler.UpdateProfile)
+			protected.PUT("/profile/fcm", authHandler.UpdateFcmToken)
 
 			// Medical Profile
 			protected.GET("/profile/medical", profileHandler.GetMedicalProfile)
@@ -109,6 +110,7 @@ func main() {
 			protected.GET("/users/search", contactHandler.SearchUsers)
 			protected.POST("/contacts", contactHandler.AddContact)
 			protected.GET("/contacts", contactHandler.ListContacts)
+			protected.DELETE("/contacts/:id", contactHandler.DeleteContact)
 			protected.GET("/contacts/requests", contactHandler.ListPendingRequests)
 			protected.POST("/contacts/requests/:id/accept", contactHandler.AcceptRequest)
 			protected.POST("/contacts/requests/:id/reject", contactHandler.RejectRequest)
@@ -117,6 +119,7 @@ func main() {
 			protected.POST("/sos/trigger", sosHandler.TriggerSos)
 			protected.POST("/sos/:id/resolve", sosHandler.ResolveSos)
 			protected.POST("/sos/:id/track", sosHandler.TrackLocation)
+			protected.POST("/sos/:id/acknowledge", sosHandler.AcknowledgeSos)
 			protected.GET("/sos/:id", sosHandler.GetSosDetail)
 			protected.GET("/sos/history/sent", sosHandler.GetSentHistory)
 			protected.GET("/sos/history/received", sosHandler.GetReceivedHistory)
@@ -125,7 +128,7 @@ func main() {
 
 	port := os.Getenv("PORT")
 	log.Printf("Safe backend is running natively on :%s", port)
-	r.Run(":" + port)
+	r.Run("0.0.0.0:" + port)
 }
 
 func loadEnv(filename string) {

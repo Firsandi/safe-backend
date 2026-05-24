@@ -15,8 +15,8 @@ type MedicalProfile struct {
 
 // MedicalProfileRequest represents the request body to upsert medical details
 type MedicalProfileRequest struct {
-	BloodType    string `json:"blood_type"    binding:"required"`
-	MedicalNotes string `json:"medical_notes" binding:"required"`
+	BloodType    string `json:"blood_type"`
+	MedicalNotes string `json:"medical_notes"`
 }
 
 // EmergencyContact represents the relation between requester and receiver
@@ -114,4 +114,14 @@ type SosEventDetailDTO struct {
 	MedicalSnapshot  json.RawMessage `db:"medical_snapshot"  json:"medical_snapshot"`
 	CreatedAt        time.Time       `db:"created_at"        json:"created_at"`
 	TrackingPoints   []SosTracking   `json:"tracking_points"`
+	Responders       []SosAcknowledgement `json:"responders"`
+}
+
+// SosAcknowledgement represents a read receipt or acknowledgment from a responder
+type SosAcknowledgement struct {
+	AcknowledgementID string    `db:"acknowledgement_id" json:"acknowledgement_id"`
+	SosID             string    `db:"sos_id"             json:"sos_id"`
+	ResponderID       string    `db:"responder_id"       json:"responder_id"`
+	ResponderName     string    `db:"responder_name"     json:"responder_name,omitempty"`
+	AcknowledgedAt    time.Time `db:"acknowledged_at"    json:"acknowledged_at"`
 }
