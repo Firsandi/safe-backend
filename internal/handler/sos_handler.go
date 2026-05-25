@@ -111,10 +111,10 @@ func (h *SosHandler) TriggerSos(c *gin.Context) {
 	// Fetch all emergency contacts to notify them
 	contacts, err := h.contactRepo.GetContacts(userID)
 	if err == nil && len(contacts) > 0 {
-		title := "🚨 EMERGENCY: BUTUH BANTUAN SEGERA!"
+		title := "EMERGENCY: BUTUH BANTUAN SEGERA!"
 		triggerLabel := "Manual"
 		if req.TriggerType == "auto" {
-			title = "🚨 EMERGENCY: BENTURAN/KECELAKAAN TERDETEKSI!"
+			title = "EMERGENCY: BENTURAN/KECELAKAAN TERDETEKSI!"
 			triggerLabel = "Sensor Otomatis"
 		}
 		body := fmt.Sprintf("%s mengalami keadaan darurat (%s)! Segera periksa lokasi.", user.Name, triggerLabel)

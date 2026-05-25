@@ -88,7 +88,7 @@ func (h *EmergencyContactHandler) AddContact(c *gin.Context) {
 		sender, errSender := h.userRepo.FindByID(userID)
 		target, errTarget := h.userRepo.FindByID(req.TargetUserID)
 		if errSender == nil && errTarget == nil && target.FcmToken != nil && *target.FcmToken != "" {
-			title := "🤝 Permintaan Kontak Darurat"
+			title := "Permintaan Kontak Darurat"
 			body := fmt.Sprintf("%s ingin menambahkan Anda sebagai kontak darurat.", sender.Name)
 			dataPayload := map[string]string{
 				"type":        "contact_request",
@@ -172,7 +172,7 @@ func (h *EmergencyContactHandler) AcceptRequest(c *gin.Context) {
 			receiver, errReceiver := h.userRepo.FindByID(userID)
 			requester, errRequester := h.userRepo.FindByID(requesterID)
 			if errReceiver == nil && errRequester == nil && requester.FcmToken != nil && *requester.FcmToken != "" {
-				title := "✅ Permintaan Kontak Diterima"
+				title := "Permintaan Kontak Diterima"
 				body := fmt.Sprintf("%s menyetujui permintaan kontak darurat Anda.", receiver.Name)
 				dataPayload := map[string]string{
 					"type":           "contact_accepted",
