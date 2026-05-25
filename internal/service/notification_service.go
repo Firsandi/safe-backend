@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/messaging"
@@ -31,7 +32,6 @@ func (s *MockNotificationService) SendPush(token, title, body string, data map[s
 		"Body             : %s\n"+
 		"Android Channel  : emergency_channel_id\n"+
 		"Android Sound    : alarm_sound\n"+
-		"APNs Critical    : Volume=1.0, Sound=alarm_sound.caf\n"+
 		"Custom Data      : %+v\n"+
 		"======================================================\n",
 		token, title, body, data,
@@ -44,9 +44,8 @@ type RealFcmNotificationService struct {
 	client *messaging.Client
 }
 
-func NewRealFcmNotificationService(credentialsFile string) (*RealFcmNotificationService, error) {
+func NewRealFcmNotificationService(opt option.ClientOption) (*RealFcmNotificationService, error) {
 	ctx := context.Background()
-	opt := option.WithCredentialsFile(credentialsFile)
 	
 	app, err := firebase.NewApp(ctx, nil, opt)
 	if err != nil {
@@ -78,20 +77,6 @@ func (s *RealFcmNotificationService) SendPush(token, title, body string, data ma
 				Sound:     "alarm_sound",          // Membaca file alarm_sound.mp3 di res/raw
 			},
 		},
-		APNS: &messaging.APNSConfig{
-			Headers: map[string]string{
-				"apns-priority": "10",
-			},
-			Payload: &messaging.APNSPayload{
-				Aps: &messaging.Aps{
-					CriticalSound: &messaging.CriticalSound{
-						Critical: true, // Memintas mode silent/DND pada iOS
-						Name:     "alarm_sound.caf",
-						Volume:   1.0,
-					},
-				},
-			},
-		},
 	}
 
 	res, err := s.client.Send(ctx, message)
@@ -105,10 +90,36 @@ func (s *RealFcmNotificationService) SendPush(token, title, body string, data ma
 
 // GetNotificationService initializes the configured service based on environment variables
 func GetNotificationService() NotificationService {
-	credsPath := os.Getenv("FIREBASE_CREDENTIALS_PATH")
-	if credsPath != "" {
-		log.Printf("Initializing Real Firebase Cloud Messaging Service with credentials from: %s", credsPath)
-		realService, err := NewRealFcmNotificationService(credsPath)
+	var opt option.ClientOption
+
+	// 1. Coba load dari environment variable berisi JSON string
+	if credJSON := os.Getenv("FIREBASE_CREDENTIALS_JSON"); credJSON != "" {
+		log.Println("Initializing Real Firebase Service using FIREBASE_CREDENTIALS_JSON...")
+		credJSON = strings.ReplaceAll(credJSON, "\\n", "\n")
+		opt = option.WithCredentialsJSON([]byte(credJSON))
+	} else if credsPath := os.Getenv("FIREBASE_CREDENTIALS_PATH"); credsPath != "" {
+		// 2. Coba load dari file path yang ditentukan di env
+		log.Printf("Initializing Real Firebase Service using credentials file from: %s", credsPath)
+		opt = option.WithCredentialsFile(credsPath)
+	} else {
+		// 3. Coba cari file default local jika ada di root directory proyek
+		defaultPaths := []string{
+			"firebase-credentials.json", 
+			"firebase-service-account.json", 
+			"../firebase-credentials.json", 
+			"../firebase-service-account.json",
+		}
+		for _, path := range defaultPaths {
+			if _, err := os.Stat(path); err == nil {
+				log.Printf("Initializing Real Firebase Service using found local file: %s", path)
+				opt = option.WithCredentialsFile(path)
+				break
+			}
+		}
+	}
+
+	if opt != nil {
+		realService, err := NewRealFcmNotificationService(opt)
 		if err == nil {
 			return realService
 		}
