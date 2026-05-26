@@ -56,3 +56,8 @@ func (r *UserRepository) UpdateProfile(userID string, name string, phoneNumber s
 	_, err := r.db.Exec("UPDATE users SET name=$1, phone_number=$2, profile_image=$3 WHERE user_id=$4", name, phoneNumber, profileImage, userID)
 	return err
 }
+
+func (r *UserRepository) UpdateLocation(userID string, lat float64, lng float64) error {
+	_, err := r.db.Exec("UPDATE users SET latitude=$1, longitude=$2, location_updated_at=NOW() WHERE user_id=$3", lat, lng, userID)
+	return err
+}

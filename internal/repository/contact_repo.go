@@ -158,13 +158,17 @@ func (r *EmergencyContactRepository) GetContactsForFlutter(userID string) ([]mod
 	err := r.db.Select(&contacts, `
 		SELECT 
 			c.contact_id AS id, 
+			u.user_id AS user_id, 
 			u.name AS name, 
 			u.phone_number AS phone_number,
 			COALESCE(u.profile_image, '') AS profile_image,
 			CASE 
 				WHEN c.status = 'accepted' THEN 'Tersambung'
 				ELSE 'Menunggu Konfirmasi'
-			END AS status
+			END AS status,
+			u.latitude AS last_latitude,
+			u.longitude AS last_longitude,
+			u.location_updated_at AS last_location_update
 		FROM emergency_contacts c
 		JOIN users u ON c.receiver_id = u.user_id
 		WHERE c.requester_id = $1
@@ -173,10 +177,14 @@ func (r *EmergencyContactRepository) GetContactsForFlutter(userID string) ([]mod
 		
 		SELECT 
 			c.contact_id AS id, 
+			u.user_id AS user_id, 
 			u.name AS name, 
 			u.phone_number AS phone_number,
 			COALESCE(u.profile_image, '') AS profile_image,
-			'Tersambung' AS status
+			'Tersambung' AS status,
+			u.latitude AS last_latitude,
+			u.longitude AS last_longitude,
+			u.location_updated_at AS last_location_update
 		FROM emergency_contacts c
 		JOIN users u ON c.requester_id = u.user_id
 		WHERE c.receiver_id = $1 AND c.status = 'accepted'
@@ -193,10 +201,14 @@ func (r *EmergencyContactRepository) GetPendingRequestsForFlutter(userID string)
 	err := r.db.Select(&requests, `
 		SELECT 
 			c.contact_id AS id, 
+			u.user_id AS user_id, 
 			u.name AS name, 
 			u.phone_number AS phone_number,
 			COALESCE(u.profile_image, '') AS profile_image,
-			'Menunggu Konfirmasi' AS status
+			'Menunggu Konfirmasi' AS status,
+			u.latitude AS last_latitude,
+			u.longitude AS last_longitude,
+			u.location_updated_at AS last_location_update
 		FROM emergency_contacts c
 		JOIN users u ON c.requester_id = u.user_id
 		WHERE c.receiver_id = $1 AND c.status = 'pending'
@@ -213,6 +225,7 @@ func (r *EmergencyContactRepository) SearchUsers(query, normalized, currentUserI
 	err := r.db.Select(&users, `
 		SELECT 
 			u.user_id AS id, 
+			u.user_id AS user_id, 
 			u.name, 
 			u.phone_number, 
 			COALESCE(u.profile_image, '') AS profile_image,
@@ -223,7 +236,10 @@ func (r *EmergencyContactRepository) SearchUsers(query, normalized, currentUserI
 					ELSE ''
 				END, 
 				''
-			) AS status
+			) AS status,
+			u.latitude AS last_latitude,
+			u.longitude AS last_longitude,
+			u.location_updated_at AS last_location_update
 		FROM users u
 		LEFT JOIN emergency_contacts ec ON 
 			(ec.requester_id = $3 AND ec.receiver_id = u.user_id) OR

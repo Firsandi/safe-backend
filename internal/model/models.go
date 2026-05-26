@@ -53,11 +53,15 @@ type ContactRequestDTO struct {
 
 // ContactResponseDTO represents the structure expected by the Flutter frontend
 type ContactResponseDTO struct {
-	ID           string  `db:"id"            json:"id"`
-	Name         string  `db:"name"          json:"name"`
-	PhoneNumber  string  `db:"phone_number"  json:"phone_number"`
-	ProfileImage *string `db:"profile_image" json:"profile_image"`
-	Status       string  `db:"status"        json:"status"`
+	ID                 string     `db:"id"                   json:"id"`
+	UserID             string     `db:"user_id"              json:"user_id"`
+	Name               string     `db:"name"                 json:"name"`
+	PhoneNumber        string     `db:"phone_number"         json:"phone_number"`
+	ProfileImage       *string    `db:"profile_image"        json:"profile_image"`
+	Status             string     `db:"status"               json:"status"`
+	LastLatitude       *float64   `db:"last_latitude"        json:"last_latitude"`
+	LastLongitude      *float64   `db:"last_longitude"       json:"last_longitude"`
+	LastLocationUpdate *time.Time `db:"last_location_update" json:"last_location_update"`
 }
 
 // AddContactRequest represents the request body to add a contact by user id

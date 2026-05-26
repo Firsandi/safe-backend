@@ -102,6 +102,7 @@ func main() {
 			// Basic Profile
 			protected.PUT("/profile", authHandler.UpdateProfile)
 			protected.PUT("/profile/fcm", authHandler.UpdateFcmToken)
+			protected.PUT("/location", authHandler.UpdateLocation)
 
 			// Medical Profile
 			protected.GET("/profile/medical", profileHandler.GetMedicalProfile)
