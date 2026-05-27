@@ -80,7 +80,7 @@ func main() {
 		},
 		APNS: &messaging.APNSConfig{
 			Payload: &messaging.APNSPayload{
-				Aps: &messaging.APNSAlert{
+				Aps: &messaging.Aps{
 					Sound: "alarm_sound.caf",
 				},
 			},
