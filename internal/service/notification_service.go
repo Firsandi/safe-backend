@@ -30,7 +30,7 @@ func (s *MockNotificationService) SendPush(token, title, body string, data map[s
 		"Target FCM Token : %s\n"+
 		"Title            : %s\n"+
 		"Body             : %s\n"+
-		"Android Channel  : emergency_channel_id\n"+
+		"Android Channel  : emergency_channel_id_v2\n"+
 		"Android Sound    : alarm_sound\n"+
 		"Custom Data      : %+v\n"+
 		"======================================================\n",
@@ -82,8 +82,8 @@ func (s *RealFcmNotificationService) SendPush(token, title, body string, data ma
 		Android: &messaging.AndroidConfig{
 			Priority: "high",
 			Notification: &messaging.AndroidNotification{
-				ChannelID: "emergency_channel_id", // Harus sama dengan Channel ID di Flutter
-				Sound:     "alarm_sound",          // Membaca file alarm_sound.mp3 di res/raw
+				ChannelID: "emergency_channel_id_v2", // Harus sama dengan Channel ID di Flutter
+				Sound:     "alarm_sound",             // Membaca file alarm_sound.mp3 di res/raw
 			},
 		},
 	}

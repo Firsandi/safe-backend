@@ -74,8 +74,8 @@ func main() {
 		Android: &messaging.AndroidConfig{
 			Priority: "high",
 			Notification: &messaging.AndroidNotification{
-				ChannelID: "emergency_channel_id", // Must match the channel ID in your Flutter app config
-				Sound:     "alarm_sound",          // The sound resource in res/raw
+				ChannelID: "emergency_channel_id_v2", // Must match the channel ID in your Flutter app config
+				Sound:     "alarm_sound",             // The sound resource in res/raw
 			},
 		},
 		APNS: &messaging.APNSConfig{
