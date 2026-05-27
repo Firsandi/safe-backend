@@ -47,7 +47,16 @@ type RealFcmNotificationService struct {
 func NewRealFcmNotificationService(opt option.ClientOption) (*RealFcmNotificationService, error) {
 	ctx := context.Background()
 	
-	app, err := firebase.NewApp(ctx, nil, opt)
+	var config *firebase.Config
+	projectID := os.Getenv("FIREBASE_PROJECT_ID")
+	if projectID != "" {
+		config = &firebase.Config{
+			ProjectID: projectID,
+		}
+		log.Printf("Using explicit FIREBASE_PROJECT_ID configuration: %s", projectID)
+	}
+
+	app, err := firebase.NewApp(ctx, config, opt)
 	if err != nil {
 		return nil, fmt.Errorf("gagal menginisialisasi firebase app: %v", err)
 	}
@@ -105,7 +114,18 @@ func GetNotificationService() NotificationService {
 
 	if credJSON != "" {
 		log.Println("Initializing Real Firebase Service using FIREBASE_CREDENTIALS_JSON...")
+		credJSON = strings.TrimSpace(credJSON)
+		
+		// Clean surrounding quotes added by environment parsing (e.g. Railway)
+		if (strings.HasPrefix(credJSON, "\"") && strings.HasSuffix(credJSON, "\"")) || 
+		   (strings.HasPrefix(credJSON, "'") && strings.HasSuffix(credJSON, "'")) {
+			credJSON = credJSON[1 : len(credJSON)-1]
+		}
+		
+		// Unescape double-escaped quotes if present
+		credJSON = strings.ReplaceAll(credJSON, "\\\"", "\"")
 		credJSON = strings.ReplaceAll(credJSON, "\\n", "\n")
+		
 		opt = option.WithCredentialsJSON([]byte(credJSON))
 	} else if credsPath != "" {
 		// 2. Coba load dari file path yang ditentukan di env
