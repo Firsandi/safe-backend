@@ -219,11 +219,20 @@ func runMigrations(db *sqlx.DB) error {
 			break
 		}
 
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return fmt.Errorf("could not find migration or backend/migration directory in any parent path")
+		targetFallbackSafe := filepath.Join(dir, "safe-backend/migration")
+		files, errRead = os.ReadDir(targetFallbackSafe)
+		if errRead == nil {
+			migrationDir = targetFallbackSafe
+			break
 		}
-		dir = parent
+
+		parent := filepath.Join(dir, "..")
+		// Clean the parent path to prevent infinite loops
+		parentCleaned := filepath.Clean(parent)
+		if parentCleaned == dir {
+			return fmt.Errorf("could not find migration, backend/migration, or safe-backend/migration directory in any parent path")
+		}
+		dir = parentCleaned
 	}
 
 	var sqlFiles []string
