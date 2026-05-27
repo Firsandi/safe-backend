@@ -6,6 +6,15 @@ WHERE medical_id NOT IN (
     ORDER BY user_id, medical_id DESC
 );
 
--- Add UNIQUE constraint to user_id in medical_profiles table
-ALTER TABLE medical_profiles
-ADD CONSTRAINT unique_user_id UNIQUE (user_id);
+-- Add UNIQUE constraint to user_id in medical_profiles table if it does not exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'unique_user_id'
+    ) THEN
+        ALTER TABLE medical_profiles
+        ADD CONSTRAINT unique_user_id UNIQUE (user_id);
+    END IF;
+END;
+$$;
+

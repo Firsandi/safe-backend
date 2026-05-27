@@ -93,11 +93,21 @@ func GetNotificationService() NotificationService {
 	var opt option.ClientOption
 
 	// 1. Coba load dari environment variable berisi JSON string
-	if credJSON := os.Getenv("FIREBASE_CREDENTIALS_JSON"); credJSON != "" {
+	credJSON := os.Getenv("FIREBASE_CREDENTIALS_JSON")
+	if credJSON == "" {
+		credJSON = os.Getenv("FIREBASE_CREDENTIAL_JSON") // Fallback tanpa 'S' (sesuai dengan penulisan di .env)
+	}
+
+	credsPath := os.Getenv("FIREBASE_CREDENTIALS_PATH")
+	if credsPath == "" {
+		credsPath = os.Getenv("FIREBASE_CREDENTIAL_PATH") // Fallback tanpa 'S'
+	}
+
+	if credJSON != "" {
 		log.Println("Initializing Real Firebase Service using FIREBASE_CREDENTIALS_JSON...")
 		credJSON = strings.ReplaceAll(credJSON, "\\n", "\n")
 		opt = option.WithCredentialsJSON([]byte(credJSON))
-	} else if credsPath := os.Getenv("FIREBASE_CREDENTIALS_PATH"); credsPath != "" {
+	} else if credsPath != "" {
 		// 2. Coba load dari file path yang ditentukan di env
 		log.Printf("Initializing Real Firebase Service using credentials file from: %s", credsPath)
 		opt = option.WithCredentialsFile(credsPath)
