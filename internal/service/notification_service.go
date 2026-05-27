@@ -124,7 +124,11 @@ func GetNotificationService() NotificationService {
 		
 		// Unescape double-escaped quotes if present
 		credJSON = strings.ReplaceAll(credJSON, "\\\"", "\"")
-		credJSON = strings.ReplaceAll(credJSON, "\\n", "\n")
+		
+		// We should NOT replace "\n" with raw newline bytes in the JSON string itself,
+		// as raw newlines are invalid inside JSON string literals.
+		// If the JSON was double-escaped (e.g., "\\n" instead of "\n"), we restore it to "\n".
+		credJSON = strings.ReplaceAll(credJSON, "\\\\n", "\\n")
 		
 		opt = option.WithCredentialsJSON([]byte(credJSON))
 	} else if credsPath != "" {
