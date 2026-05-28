@@ -10,6 +10,7 @@ type User struct {
 	PhoneNumber  string    `db:"phone_number"  json:"phone_number"`
 	ProfileImage string    `db:"profile_image" json:"profile_image"`
 	FcmToken     *string   `db:"fcm_token"     json:"fcm_token,omitempty"`
+	EmailVerified bool     `db:"email_verified" json:"email_verified"`
 	CreatedAt    time.Time `db:"created_at"    json:"created_at"`
 }
 

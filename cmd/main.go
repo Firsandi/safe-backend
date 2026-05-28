@@ -94,6 +94,11 @@ func main() {
 		api.POST("/register", authHandler.Register)
 		api.POST("/login", authHandler.Login)
 		api.POST("/auth/google", authHandler.GoogleLogin)
+		api.GET("/verify-email", authHandler.VerifyEmail)
+		api.POST("/verify-email", authHandler.VerifyEmail)
+		api.POST("/resend-verification", authHandler.ResendVerificationEmail)
+		api.POST("/cancel-registration", authHandler.CancelRegistration)
+		api.POST("/verification-status", authHandler.VerificationStatus)
 
 		// Protected endpoints
 		protected := api.Group("")
