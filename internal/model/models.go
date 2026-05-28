@@ -54,13 +54,14 @@ type ContactRequestDTO struct {
 // ContactResponseDTO represents the structure expected by the Flutter frontend
 type ContactResponseDTO struct {
 	ID                 string     `db:"id"                   json:"id"`
+	UserID             string     `db:"user_id"              json:"user_id"`
 	Name               string     `db:"name"                 json:"name"`
 	PhoneNumber        string     `db:"phone_number"         json:"phone_number"`
 	ProfileImage       *string    `db:"profile_image"        json:"profile_image"`
 	Status             string     `db:"status"               json:"status"`
-	LastLatitude       *float64   `db:"last_latitude"        json:"last_latitude,omitempty"`
-	LastLongitude      *float64   `db:"last_longitude"       json:"last_longitude,omitempty"`
-	LastLocationUpdate *time.Time `db:"last_location_update" json:"last_location_update,omitempty"`
+	LastLatitude       *float64   `db:"last_latitude"        json:"last_latitude"`
+	LastLongitude      *float64   `db:"last_longitude"       json:"last_longitude"`
+	LastLocationUpdate *time.Time `db:"last_location_update" json:"last_location_update"`
 }
 
 // AddContactRequest represents the request body to add a contact by user id
@@ -106,17 +107,17 @@ type SosTracking struct {
 
 // SosEventDetailDTO is the complete detail of an SOS event, with snapshots and tracking list
 type SosEventDetailDTO struct {
-	SosID            string          `db:"sos_id"            json:"sos_id"`
-	UserID           string          `db:"user_id"           json:"user_id"`
-	UserName         string          `db:"user_name"         json:"user_name"`
-	UserPhone        string          `db:"user_phone"        json:"user_phone"`
-	TriggerType      string          `db:"trigger_type"      json:"trigger_type"`
-	Status           string          `db:"status"            json:"status"`
-	InitialLatitude  float64         `db:"initial_latitude"  json:"initial_latitude"`
-	InitialLongitude float64         `db:"initial_longitude" json:"initial_longitude"`
-	MedicalSnapshot  json.RawMessage `db:"medical_snapshot"  json:"medical_snapshot"`
-	CreatedAt        time.Time       `db:"created_at"        json:"created_at"`
-	TrackingPoints   []SosTracking   `json:"tracking_points"`
+	SosID            string               `db:"sos_id"            json:"sos_id"`
+	UserID           string               `db:"user_id"           json:"user_id"`
+	UserName         string               `db:"user_name"         json:"user_name"`
+	UserPhone        string               `db:"user_phone"        json:"user_phone"`
+	TriggerType      string               `db:"trigger_type"      json:"trigger_type"`
+	Status           string               `db:"status"            json:"status"`
+	InitialLatitude  float64              `db:"initial_latitude"  json:"initial_latitude"`
+	InitialLongitude float64              `db:"initial_longitude" json:"initial_longitude"`
+	MedicalSnapshot  json.RawMessage      `db:"medical_snapshot"  json:"medical_snapshot"`
+	CreatedAt        time.Time            `db:"created_at"        json:"created_at"`
+	TrackingPoints   []SosTracking        `json:"tracking_points"`
 	Responders       []SosAcknowledgement `json:"responders"`
 }
 

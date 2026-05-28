@@ -16,7 +16,7 @@ func NewUserRepository(db *sqlx.DB) *UserRepository {
 func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 	var user model.User
 	err := r.db.Get(&user,
-		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, created_at, last_latitude, last_longitude, last_location_update FROM users WHERE email=$1",
+		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, created_at, latitude AS last_latitude, longitude AS last_longitude, location_updated_at AS last_location_update FROM users WHERE email=$1",
 		email,
 	)
 	if err != nil {
@@ -28,7 +28,7 @@ func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 func (r *UserRepository) FindByID(id string) (*model.User, error) {
 	var user model.User
 	err := r.db.Get(&user,
-		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, created_at, last_latitude, last_longitude, last_location_update FROM users WHERE user_id=$1",
+		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, created_at, latitude AS last_latitude, longitude AS last_longitude, location_updated_at AS last_location_update FROM users WHERE user_id=$1",
 		id,
 	)
 	if err != nil {
@@ -57,7 +57,7 @@ func (r *UserRepository) UpdateProfile(userID string, name string, phoneNumber s
 	return err
 }
 
-func (r *UserRepository) UpdateLocation(userID string, latitude, longitude float64) error {
-	_, err := r.db.Exec("UPDATE users SET last_latitude=$1, last_longitude=$2, last_location_update=NOW() WHERE user_id=$3", latitude, longitude, userID)
+func (r *UserRepository) UpdateLocation(userID string, lat float64, lng float64) error {
+	_, err := r.db.Exec("UPDATE users SET latitude=$1, longitude=$2, location_updated_at=NOW() WHERE user_id=$3", lat, lng, userID)
 	return err
 }

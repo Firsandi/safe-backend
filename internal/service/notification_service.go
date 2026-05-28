@@ -30,7 +30,7 @@ func (s *MockNotificationService) SendPush(token, title, body string, data map[s
 		"Target FCM Token : %s\n"+
 		"Title            : %s\n"+
 		"Body             : %s\n"+
-		"Android Channel  : emergency_channel_id\n"+
+		"Android Channel  : emergency_channel_id_v2\n"+
 		"Android Sound    : alarm_sound\n"+
 		"Custom Data      : %+v\n"+
 		"======================================================\n",
@@ -47,7 +47,16 @@ type RealFcmNotificationService struct {
 func NewRealFcmNotificationService(opt option.ClientOption) (*RealFcmNotificationService, error) {
 	ctx := context.Background()
 	
-	app, err := firebase.NewApp(ctx, nil, opt)
+	var config *firebase.Config
+	projectID := os.Getenv("FIREBASE_PROJECT_ID")
+	if projectID != "" {
+		config = &firebase.Config{
+			ProjectID: projectID,
+		}
+		log.Printf("Using explicit FIREBASE_PROJECT_ID configuration: %s", projectID)
+	}
+
+	app, err := firebase.NewApp(ctx, config, opt)
 	if err != nil {
 		return nil, fmt.Errorf("gagal menginisialisasi firebase app: %v", err)
 	}
@@ -73,8 +82,8 @@ func (s *RealFcmNotificationService) SendPush(token, title, body string, data ma
 		Android: &messaging.AndroidConfig{
 			Priority: "high",
 			Notification: &messaging.AndroidNotification{
-				ChannelID: "emergency_channel_id", // Harus sama dengan Channel ID di Flutter
-				Sound:     "alarm_sound",          // Membaca file alarm_sound.mp3 di res/raw
+				ChannelID: "emergency_channel_id_v2", // Harus sama dengan Channel ID di Flutter
+				Sound:     "alarm_sound",             // Membaca file alarm_sound.mp3 di res/raw
 			},
 		},
 	}
@@ -93,11 +102,36 @@ func GetNotificationService() NotificationService {
 	var opt option.ClientOption
 
 	// 1. Coba load dari environment variable berisi JSON string
-	if credJSON := os.Getenv("FIREBASE_CREDENTIALS_JSON"); credJSON != "" {
+	credJSON := os.Getenv("FIREBASE_CREDENTIALS_JSON")
+	if credJSON == "" {
+		credJSON = os.Getenv("FIREBASE_CREDENTIAL_JSON") // Fallback tanpa 'S' (sesuai dengan penulisan di .env)
+	}
+
+	credsPath := os.Getenv("FIREBASE_CREDENTIALS_PATH")
+	if credsPath == "" {
+		credsPath = os.Getenv("FIREBASE_CREDENTIAL_PATH") // Fallback tanpa 'S'
+	}
+
+	if credJSON != "" {
 		log.Println("Initializing Real Firebase Service using FIREBASE_CREDENTIALS_JSON...")
-		credJSON = strings.ReplaceAll(credJSON, "\\n", "\n")
+		credJSON = strings.TrimSpace(credJSON)
+		
+		// Clean surrounding quotes added by environment parsing (e.g. Railway)
+		if (strings.HasPrefix(credJSON, "\"") && strings.HasSuffix(credJSON, "\"")) || 
+		   (strings.HasPrefix(credJSON, "'") && strings.HasSuffix(credJSON, "'")) {
+			credJSON = credJSON[1 : len(credJSON)-1]
+		}
+		
+		// Unescape double-escaped quotes if present
+		credJSON = strings.ReplaceAll(credJSON, "\\\"", "\"")
+		
+		// We should NOT replace "\n" with raw newline bytes in the JSON string itself,
+		// as raw newlines are invalid inside JSON string literals.
+		// If the JSON was double-escaped (e.g., "\\n" instead of "\n"), we restore it to "\n".
+		credJSON = strings.ReplaceAll(credJSON, "\\\\n", "\\n")
+		
 		opt = option.WithCredentialsJSON([]byte(credJSON))
-	} else if credsPath := os.Getenv("FIREBASE_CREDENTIALS_PATH"); credsPath != "" {
+	} else if credsPath != "" {
 		// 2. Coba load dari file path yang ditentukan di env
 		log.Printf("Initializing Real Firebase Service using credentials file from: %s", credsPath)
 		opt = option.WithCredentialsFile(credsPath)

@@ -17,10 +17,10 @@ type User struct {
 }
 
 type RegisterRequest struct {
-	Name        string `json:"name"         binding:"required"`
-	Email       string `json:"email"        binding:"required,email"`
-	Password    string `json:"password"     binding:"required,min=6"`
-	PhoneNumber string `json:"phone_number" binding:"required"`
+	Name        string  `json:"name"         binding:"required"`
+	Email       string  `json:"email"        binding:"required,email"`
+	Password    string  `json:"password"     binding:"required,min=6"`
+	PhoneNumber string  `json:"phone_number" binding:"required"`
 	FcmToken    *string `json:"fcm_token"    binding:"omitempty"`
 }
 

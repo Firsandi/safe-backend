@@ -33,8 +33,8 @@ func (r *EmergencyContactRepository) SendRequest(requesterID, receiverEmail stri
 
 	// Check if relationship already exists
 	var count int
-	err = r.db.Get(&count, 
-		"SELECT COUNT(*) FROM emergency_contacts WHERE (requester_id=$1 AND receiver_id=$2) OR (requester_id=$2 AND receiver_id=$1)", 
+	err = r.db.Get(&count,
+		"SELECT COUNT(*) FROM emergency_contacts WHERE (requester_id=$1 AND receiver_id=$2) OR (requester_id=$2 AND receiver_id=$1)",
 		requesterID, receiver.UserID,
 	)
 	if err != nil {
@@ -81,6 +81,13 @@ func (r *EmergencyContactRepository) RespondToRequest(relationID, receiverID str
 		}
 		return nil
 	}
+}
+
+// GetRequesterID fetches the requester_id of a specific contact relation
+func (r *EmergencyContactRepository) GetRequesterID(relationID string) (string, error) {
+	var requesterID string
+	err := r.db.Get(&requesterID, "SELECT requester_id FROM emergency_contacts WHERE contact_id=$1", relationID)
+	return requesterID, err
 }
 
 // GetContacts returns a list of contacts who have accepted the user's request (User sends SOS to them)
@@ -151,6 +158,7 @@ func (r *EmergencyContactRepository) GetContactsForFlutter(userID string) ([]mod
 	err := r.db.Select(&contacts, `
 		SELECT 
 			c.contact_id AS id, 
+			u.user_id AS user_id, 
 			u.name AS name, 
 			u.phone_number AS phone_number,
 			COALESCE(u.profile_image, '') AS profile_image,
@@ -158,9 +166,9 @@ func (r *EmergencyContactRepository) GetContactsForFlutter(userID string) ([]mod
 				WHEN c.status = 'accepted' THEN 'Tersambung'
 				ELSE 'Menunggu Konfirmasi'
 			END AS status,
-			u.last_latitude,
-			u.last_longitude,
-			u.last_location_update
+			u.latitude AS last_latitude,
+			u.longitude AS last_longitude,
+			u.location_updated_at AS last_location_update
 		FROM emergency_contacts c
 		JOIN users u ON c.receiver_id = u.user_id
 		WHERE c.requester_id = $1
@@ -169,13 +177,14 @@ func (r *EmergencyContactRepository) GetContactsForFlutter(userID string) ([]mod
 		
 		SELECT 
 			c.contact_id AS id, 
+			u.user_id AS user_id, 
 			u.name AS name, 
 			u.phone_number AS phone_number,
 			COALESCE(u.profile_image, '') AS profile_image,
 			'Tersambung' AS status,
-			u.last_latitude,
-			u.last_longitude,
-			u.last_location_update
+			u.latitude AS last_latitude,
+			u.longitude AS last_longitude,
+			u.location_updated_at AS last_location_update
 		FROM emergency_contacts c
 		JOIN users u ON c.requester_id = u.user_id
 		WHERE c.receiver_id = $1 AND c.status = 'accepted'
@@ -192,10 +201,14 @@ func (r *EmergencyContactRepository) GetPendingRequestsForFlutter(userID string)
 	err := r.db.Select(&requests, `
 		SELECT 
 			c.contact_id AS id, 
+			u.user_id AS user_id, 
 			u.name AS name, 
 			u.phone_number AS phone_number,
 			COALESCE(u.profile_image, '') AS profile_image,
-			'Menunggu Konfirmasi' AS status
+			'Menunggu Konfirmasi' AS status,
+			u.latitude AS last_latitude,
+			u.longitude AS last_longitude,
+			u.location_updated_at AS last_location_update
 		FROM emergency_contacts c
 		JOIN users u ON c.requester_id = u.user_id
 		WHERE c.receiver_id = $1 AND c.status = 'pending'
@@ -212,6 +225,7 @@ func (r *EmergencyContactRepository) SearchUsers(query, normalized, currentUserI
 	err := r.db.Select(&users, `
 		SELECT 
 			u.user_id AS id, 
+			u.user_id AS user_id, 
 			u.name, 
 			u.phone_number, 
 			COALESCE(u.profile_image, '') AS profile_image,
@@ -222,7 +236,10 @@ func (r *EmergencyContactRepository) SearchUsers(query, normalized, currentUserI
 					ELSE ''
 				END, 
 				''
-			) AS status
+			) AS status,
+			u.latitude AS last_latitude,
+			u.longitude AS last_longitude,
+			u.location_updated_at AS last_location_update
 		FROM users u
 		LEFT JOIN emergency_contacts ec ON 
 			(ec.requester_id = $3 AND ec.receiver_id = u.user_id) OR
@@ -242,8 +259,8 @@ func (r *EmergencyContactRepository) AddContact(requesterID, targetUserID string
 	}
 
 	var count int
-	err := r.db.Get(&count, 
-		"SELECT COUNT(*) FROM emergency_contacts WHERE (requester_id=$1 AND receiver_id=$2) OR (requester_id=$2 AND receiver_id=$1)", 
+	err := r.db.Get(&count,
+		"SELECT COUNT(*) FROM emergency_contacts WHERE (requester_id=$1 AND receiver_id=$2) OR (requester_id=$2 AND receiver_id=$1)",
 		requesterID, targetUserID,
 	)
 	if err != nil {
