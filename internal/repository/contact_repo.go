@@ -157,7 +157,10 @@ func (r *EmergencyContactRepository) GetContactsForFlutter(userID string) ([]mod
 			CASE 
 				WHEN c.status = 'accepted' THEN 'Tersambung'
 				ELSE 'Menunggu Konfirmasi'
-			END AS status
+			END AS status,
+			u.last_latitude,
+			u.last_longitude,
+			u.last_location_update
 		FROM emergency_contacts c
 		JOIN users u ON c.receiver_id = u.user_id
 		WHERE c.requester_id = $1
@@ -169,7 +172,10 @@ func (r *EmergencyContactRepository) GetContactsForFlutter(userID string) ([]mod
 			u.name AS name, 
 			u.phone_number AS phone_number,
 			COALESCE(u.profile_image, '') AS profile_image,
-			'Tersambung' AS status
+			'Tersambung' AS status,
+			u.last_latitude,
+			u.last_longitude,
+			u.last_location_update
 		FROM emergency_contacts c
 		JOIN users u ON c.requester_id = u.user_id
 		WHERE c.receiver_id = $1 AND c.status = 'accepted'

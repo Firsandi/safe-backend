@@ -140,6 +140,30 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Profil berhasil diperbarui", "user": user})
 }
 
+func (h *AuthHandler) UpdateLocation(c *gin.Context) {
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Akses ditolak: token tidak valid"})
+		return
+	}
+
+	var req struct {
+		Latitude  float64 `json:"latitude" binding:"required"`
+		Longitude float64 `json:"longitude" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.repo.UpdateLocation(userID, req.Latitude, req.Longitude); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memperbarui lokasi"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Lokasi berhasil diperbarui"})
+}
+
 func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	var req struct {
 		IDToken string `json:"id_token"`

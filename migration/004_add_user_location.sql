@@ -1,0 +1,4 @@
+ALTER TABLE users 
+ADD COLUMN last_latitude DOUBLE PRECISION,
+ADD COLUMN last_longitude DOUBLE PRECISION,
+ADD COLUMN last_location_update TIMESTAMP WITH TIME ZONE;

@@ -16,7 +16,7 @@ func NewUserRepository(db *sqlx.DB) *UserRepository {
 func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 	var user model.User
 	err := r.db.Get(&user,
-		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, created_at FROM users WHERE email=$1",
+		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, created_at, last_latitude, last_longitude, last_location_update FROM users WHERE email=$1",
 		email,
 	)
 	if err != nil {
@@ -28,7 +28,7 @@ func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 func (r *UserRepository) FindByID(id string) (*model.User, error) {
 	var user model.User
 	err := r.db.Get(&user,
-		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, created_at FROM users WHERE user_id=$1",
+		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, created_at, last_latitude, last_longitude, last_location_update FROM users WHERE user_id=$1",
 		id,
 	)
 	if err != nil {
@@ -54,5 +54,10 @@ func (r *UserRepository) UpdateFcmToken(userID string, token string) error {
 
 func (r *UserRepository) UpdateProfile(userID string, name string, phoneNumber string, profileImage string) error {
 	_, err := r.db.Exec("UPDATE users SET name=$1, phone_number=$2, profile_image=$3 WHERE user_id=$4", name, phoneNumber, profileImage, userID)
+	return err
+}
+
+func (r *UserRepository) UpdateLocation(userID string, latitude, longitude float64) error {
+	_, err := r.db.Exec("UPDATE users SET last_latitude=$1, last_longitude=$2, last_location_update=NOW() WHERE user_id=$3", latitude, longitude, userID)
 	return err
 }
