@@ -10,12 +10,10 @@ WHERE medical_id NOT IN (
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 
-        FROM pg_constraint 
-        WHERE conname = 'unique_user_id'
-          AND conrelid = 'medical_profiles'::regclass
+        SELECT 1 FROM pg_constraint WHERE conname = 'unique_user_id'
     ) THEN
-        ALTER TABLE medical_profiles ADD CONSTRAINT unique_user_id UNIQUE (user_id);
+        ALTER TABLE medical_profiles
+        ADD CONSTRAINT unique_user_id UNIQUE (user_id);
     END IF;
 END;
 $$;
