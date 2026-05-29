@@ -10,6 +10,7 @@ type User struct {
 	PhoneNumber        string     `db:"phone_number"         json:"phone_number"`
 	ProfileImage       string     `db:"profile_image"        json:"profile_image"`
 	FcmToken           *string    `db:"fcm_token"            json:"fcm_token,omitempty"`
+	EmailVerified      bool       `db:"email_verified"       json:"email_verified"`
 	CreatedAt          time.Time  `db:"created_at"           json:"created_at"`
 	LastLatitude       *float64   `db:"last_latitude"        json:"last_latitude,omitempty"`
 	LastLongitude      *float64   `db:"last_longitude"       json:"last_longitude,omitempty"`
@@ -17,11 +18,13 @@ type User struct {
 }
 
 type RegisterRequest struct {
-	Name        string  `json:"name"         binding:"required"`
-	Email       string  `json:"email"        binding:"required,email"`
-	Password    string  `json:"password"     binding:"required,min=6"`
-	PhoneNumber string  `json:"phone_number" binding:"required"`
-	FcmToken    *string `json:"fcm_token"    binding:"omitempty"`
+	Name         string  `json:"name"         binding:"required"`
+	Email        string  `json:"email"        binding:"required,email"`
+	Password     string  `json:"password"     binding:"required,min=6"`
+	PhoneNumber  string  `json:"phone_number" binding:"required"`
+	FcmToken     *string `json:"fcm_token"    binding:"omitempty"`
+	BloodType    *string `json:"blood_type"    binding:"omitempty"`
+	MedicalNotes *string `json:"medical_notes" binding:"omitempty"`
 }
 
 type LoginRequest struct {
