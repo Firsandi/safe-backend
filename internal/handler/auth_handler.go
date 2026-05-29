@@ -56,7 +56,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		EmailVerified: false,
 	}
 
-	if err := h.repo.Create(user); err != nil {
+	var bloodType, medicalNotes string
+	if req.BloodType != nil {
+		bloodType = *req.BloodType
+	}
+	if req.MedicalNotes != nil {
+		medicalNotes = *req.MedicalNotes
+	}
+
+	if err := h.repo.CreateWithMedical(user, bloodType, medicalNotes); err != nil {
 		fmt.Printf("Error creating user: %v\n", err)
 		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered or database issue"})
 		return
@@ -356,11 +364,33 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 		return
 	}
 
-	// 2. Login Google hanya boleh untuk email yang sudah terdaftar di aplikasi.
+	// 2. Login/Register Google
 	user, err := h.repo.FindByEmail(email)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Email Google belum terdaftar di aplikasi. Silakan daftar akun terlebih dahulu."})
-		return
+		// Auto-register new Google user
+		hashed, err := bcrypt.GenerateFromPassword([]byte("google_oauth_placeholder_password_123!"), bcrypt.DefaultCost)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process password"})
+			return
+		}
+
+		name := req.Name
+		if name == "" {
+			name = strings.Split(email, "@")[0]
+		}
+
+		user = &model.User{
+			Name:          name,
+			Email:         email,
+			Password:      string(hashed),
+			PhoneNumber:   "",
+			EmailVerified: true,
+		}
+
+		if err := h.repo.Create(user); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mendaftarkan akun Google baru: " + err.Error()})
+			return
+		}
 	}
 	if !user.EmailVerified {
 		if err := h.repo.MarkEmailVerified(user.UserID); err != nil {
