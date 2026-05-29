@@ -281,3 +281,54 @@ func (r *UserRepository) CreateWithMedical(u *model.User, bloodType string, medi
 
 	return tx.Commit()
 }
+
+func (r *UserRepository) SavePasswordResetToken(userID string, token string) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err = tx.Exec(
+		"UPDATE password_reset_tokens SET used_at=NOW() WHERE user_id=$1 AND used_at IS NULL",
+		userID,
+	); err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(
+		`INSERT INTO password_reset_tokens (user_id, token, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '5 minutes')`,
+		userID, token,
+	)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (r *UserRepository) VerifyPasswordResetToken(email string, token string) (string, error) {
+	var userID string
+	err := r.db.Get(&userID,
+		`SELECT prt.user_id
+         FROM password_reset_tokens prt
+         JOIN users u ON u.user_id = prt.user_id
+         WHERE u.email=$1
+           AND prt.token=$2
+           AND prt.used_at IS NULL
+           AND prt.expires_at > NOW()`,
+		email, token,
+	)
+	return userID, err
+}
+
+func (r *UserRepository) MarkPasswordResetTokenUsed(token string) error {
+	_, err := r.db.Exec("UPDATE password_reset_tokens SET used_at=NOW() WHERE token=$1", token)
+	return err
+}
+
+func (r *UserRepository) UpdatePassword(userID string, newPassword string) error {
+	_, err := r.db.Exec("UPDATE users SET password=$1 WHERE user_id=$2", newPassword, userID)
+	return err
+}

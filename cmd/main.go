@@ -100,6 +100,11 @@ func main() {
 		api.POST("/cancel-registration", authHandler.CancelRegistration)
 		api.POST("/verification-status", authHandler.VerificationStatus)
 
+		// Password Reset
+		api.POST("/forgot-password", authHandler.ForgotPassword)
+		api.POST("/verify-reset-otp", authHandler.VerifyPasswordResetOTP)
+		api.POST("/reset-password", authHandler.ResetPassword)
+
 		// Protected endpoints
 		protected := api.Group("")
 		protected.Use(middleware.AuthMiddleware())
