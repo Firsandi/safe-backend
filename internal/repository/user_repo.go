@@ -2,10 +2,16 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"safe-backend/internal/model"
+)
+
+var (
+	ErrEmailAlreadyRegistered     = errors.New("email already registered")
+	ErrEmailVerificationIsPending = errors.New("email verification is pending")
 )
 
 type UserRepository struct {
@@ -58,10 +64,13 @@ func (r *UserRepository) Create(u *model.User) error {
 func (r *UserRepository) PrepareEmailForRegistration(email string) error {
 	existingUser, err := r.FindByEmail(email)
 	if err != nil {
-		return nil
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
 	}
 	if existingUser.EmailVerified {
-		return nil
+		return ErrEmailAlreadyRegistered
 	}
 
 	hasActiveOtp, err := r.HasActiveEmailVerificationToken(existingUser.UserID)
@@ -69,7 +78,7 @@ func (r *UserRepository) PrepareEmailForRegistration(email string) error {
 		return err
 	}
 	if hasActiveOtp {
-		return nil
+		return ErrEmailVerificationIsPending
 	}
 
 	return r.DeleteUnverifiedUserByEmail(email)
@@ -281,4 +290,3 @@ func (r *UserRepository) CreateWithMedical(u *model.User, bloodType string, medi
 
 	return tx.Commit()
 }
-

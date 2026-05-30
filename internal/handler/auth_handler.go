@@ -2,10 +2,13 @@ package handler
 
 import (
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
+	"net"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -37,6 +40,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	if err := h.repo.PrepareEmailForRegistration(email); err != nil {
+		if errors.Is(err, repository.ErrEmailAlreadyRegistered) {
+			c.JSON(http.StatusConflict, gin.H{"error": "Email sudah terdaftar. Silakan login."})
+			return
+		}
+		if errors.Is(err, repository.ErrEmailVerificationIsPending) {
+			c.JSON(http.StatusConflict, gin.H{"error": "Email sudah didaftarkan dan menunggu verifikasi OTP."})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare registration"})
 		return
 	}
@@ -85,14 +96,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		log.Printf("Failed to send verification email to %s: %v", user.Email, err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Akun berhasil dibuat, tetapi kode OTP gagal dikirim. Periksa konfigurasi email server atau kirim ulang OTP.",
-			"user": user,
+			"user":  user,
 		})
 		return
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Akun berhasil dibuat. Masukkan kode OTP yang dikirim ke email sebelum login.",
-		"user": user,
+		"user":    user,
 	})
 }
 
@@ -217,7 +228,7 @@ func (h *AuthHandler) VerifyEmail(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Email berhasil diverifikasi. Silakan login.",
-		"user": user,
+		"user":    user,
 	})
 }
 
@@ -333,6 +344,7 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	}
 
 	var email string
+	var name string
 
 	// Jika ada ID Token asli, lakukan verifikasi keamanan Google
 	if req.IDToken != "" && req.IDToken != "simulated_token" {
@@ -359,6 +371,7 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 			return
 		}
 		email = strings.ToLower(strings.TrimSpace(googleClaims.Email))
+		name = strings.TrimSpace(googleClaims.Name)
 	} else {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Token Google wajib valid. Mode simulasi tidak diizinkan untuk login."})
 		return
@@ -374,7 +387,6 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 			return
 		}
 
-		name := req.Name
 		if name == "" {
 			name = strings.Split(email, "@")[0]
 		}
@@ -472,5 +484,73 @@ func sendVerificationEmail(to string, token string) error {
 		body)
 
 	auth := smtp.PlainAuth("", username, password, host)
-	return smtp.SendMail(host+":"+port, auth, from, []string{to}, message)
+	return sendMailWithTimeout(host, port, auth, from, []string{to}, message, 10*time.Second)
+}
+
+func sendMailWithTimeout(host string, port string, auth smtp.Auth, from string, to []string, msg []byte, timeout time.Duration) error {
+	addr := net.JoinHostPort(host, port)
+	dialer := &net.Dialer{Timeout: timeout}
+
+	var conn net.Conn
+	var err error
+	if port == "465" {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+			ServerName: host,
+			MinVersion: tls.VersionTLS12,
+		})
+	} else {
+		conn, err = dialer.Dial("tcp", addr)
+	}
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(timeout))
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if port != "465" {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return fmt.Errorf("smtp server does not support STARTTLS")
+		}
+		config := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+		if err := client.StartTLS(config); err != nil {
+			return err
+		}
+	}
+
+	if auth != nil {
+		if ok, _ := client.Extension("AUTH"); ok {
+			if err := client.Auth(auth); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := client.Mail(from); err != nil {
+		return err
+	}
+	for _, recipient := range to {
+		if err := client.Rcpt(recipient); err != nil {
+			return err
+		}
+	}
+
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := writer.Write(msg); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	return client.Quit()
 }
