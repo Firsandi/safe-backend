@@ -2,10 +2,16 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"safe-backend/internal/model"
+)
+
+var (
+	ErrEmailAlreadyRegistered     = errors.New("email already registered")
+	ErrEmailVerificationIsPending = errors.New("email verification is pending")
 )
 
 type UserRepository struct {
@@ -58,10 +64,13 @@ func (r *UserRepository) Create(u *model.User) error {
 func (r *UserRepository) PrepareEmailForRegistration(email string) error {
 	existingUser, err := r.FindByEmail(email)
 	if err != nil {
-		return nil
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
 	}
 	if existingUser.EmailVerified {
-		return nil
+		return ErrEmailAlreadyRegistered
 	}
 
 	hasActiveOtp, err := r.HasActiveEmailVerificationToken(existingUser.UserID)
@@ -69,7 +78,7 @@ func (r *UserRepository) PrepareEmailForRegistration(email string) error {
 		return err
 	}
 	if hasActiveOtp {
-		return nil
+		return ErrEmailVerificationIsPending
 	}
 
 	return r.DeleteUnverifiedUserByEmail(email)
@@ -249,4 +258,35 @@ func (r *UserRepository) UpdateProfile(userID string, name string, phoneNumber s
 func (r *UserRepository) UpdateLocation(userID string, lat float64, lng float64) error {
 	_, err := r.db.Exec("UPDATE users SET latitude=$1, longitude=$2, location_updated_at=NOW() WHERE user_id=$3", lat, lng, userID)
 	return err
+}
+
+func (r *UserRepository) CreateWithMedical(u *model.User, bloodType string, medicalNotes string) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	row := tx.QueryRowx(
+		`INSERT INTO users (name, email, password, phone_number, profile_image, email_verified)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING user_id, created_at`,
+		u.Name, u.Email, u.Password, u.PhoneNumber, "", u.EmailVerified,
+	)
+	if err := row.Scan(&u.UserID, &u.CreatedAt); err != nil {
+		return err
+	}
+
+	if bloodType != "" || medicalNotes != "" {
+		_, err = tx.Exec(
+			`INSERT INTO medical_profiles (user_id, blood_type, medical_notes)
+             VALUES ($1, $2, $3)`,
+			u.UserID, bloodType, medicalNotes,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
