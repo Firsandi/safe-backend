@@ -25,11 +25,13 @@ type RegisterRequest struct {
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"    binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	Email       string  `json:"email"        binding:"required,email"`
+	Password    string  `json:"password"     binding:"required"`
+	DeviceToken *string `json:"device_token" binding:"omitempty"`
 }
 
 type AuthResponse struct {
-	Token string `json:"token"`
-	User  User   `json:"user"`
+	Token       string  `json:"token"`
+	DeviceToken *string `json:"device_token,omitempty"`
+	User        User    `json:"user"`
 }

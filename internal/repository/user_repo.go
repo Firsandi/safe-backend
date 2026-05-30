@@ -290,3 +290,148 @@ func (r *UserRepository) CreateWithMedical(u *model.User, bloodType string, medi
 
 	return tx.Commit()
 }
+
+// Trusted Devices & Login OTP
+
+func (r *UserRepository) SaveTrustedDevice(userID string, deviceToken string) error {
+	_, err := r.db.Exec(
+		`INSERT INTO trusted_devices (user_id, device_token, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '60 days')`,
+		userID, deviceToken,
+	)
+	return err
+}
+
+func (r *UserRepository) VerifyTrustedDevice(email string, deviceToken string) (*model.User, error) {
+	var user model.User
+	err := r.db.Get(&user,
+		`SELECT u.user_id, u.name, u.email, u.password, u.phone_number, COALESCE(u.profile_image, '') AS profile_image, u.fcm_token, COALESCE(u.email_verified, false) AS email_verified, u.created_at
+         FROM trusted_devices td
+         JOIN users u ON u.user_id = td.user_id
+         WHERE u.email=$1
+           AND td.device_token=$2
+           AND td.expires_at > NOW()`,
+		email, deviceToken,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *UserRepository) SaveLoginOtpToken(userID string, token string) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err = tx.Exec(
+		"UPDATE login_otp_tokens SET used_at=NOW() WHERE user_id=$1 AND used_at IS NULL",
+		userID,
+	); err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(
+		`INSERT INTO login_otp_tokens (user_id, token, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '5 minutes')`,
+		userID, token,
+	)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (r *UserRepository) VerifyLoginOtpToken(email string, token string) (*model.User, error) {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var userID string
+	err = tx.Get(&userID,
+		`SELECT lot.user_id
+         FROM login_otp_tokens lot
+         JOIN users u ON u.user_id = lot.user_id
+         WHERE u.email=$1
+           AND lot.token=$2
+           AND lot.used_at IS NULL
+           AND lot.expires_at > NOW()`,
+		email, token,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err = tx.Exec("UPDATE login_otp_tokens SET used_at=NOW() WHERE token=$1", token); err != nil {
+		return nil, err
+	}
+
+	var user model.User
+	err = tx.Get(&user,
+		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, COALESCE(email_verified, false) AS email_verified, created_at FROM users WHERE user_id=$1",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, tx.Commit()
+}
+
+// Password Reset
+
+func (r *UserRepository) SavePasswordResetToken(userID string, token string) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err = tx.Exec(
+		"UPDATE password_reset_tokens SET used_at=NOW() WHERE user_id=$1 AND used_at IS NULL",
+		userID,
+	); err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(
+		`INSERT INTO password_reset_tokens (user_id, token, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '5 minutes')`,
+		userID, token,
+	)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (r *UserRepository) VerifyPasswordResetToken(email string, token string) (string, error) {
+	var userID string
+	err := r.db.Get(&userID,
+		`SELECT prt.user_id
+         FROM password_reset_tokens prt
+         JOIN users u ON u.user_id = prt.user_id
+         WHERE u.email=$1
+           AND prt.token=$2
+           AND prt.used_at IS NULL
+           AND prt.expires_at > NOW()`,
+		email, token,
+	)
+	return userID, err
+}
+
+func (r *UserRepository) MarkPasswordResetTokenUsed(token string) error {
+	_, err := r.db.Exec("UPDATE password_reset_tokens SET used_at=NOW() WHERE token=$1", token)
+	return err
+}
+
+func (r *UserRepository) UpdatePassword(userID string, hashedPassword string) error {
+	_, err := r.db.Exec("UPDATE users SET password=$1 WHERE user_id=$2", hashedPassword, userID)
+	return err
+}

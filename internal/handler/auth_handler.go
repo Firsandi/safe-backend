@@ -92,14 +92,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	if err := sendVerificationEmail(user.Email, verificationToken); err != nil {
-		log.Printf("Failed to send verification email to %s: %v", user.Email, err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Akun berhasil dibuat, tetapi kode OTP gagal dikirim. Periksa konfigurasi email server atau kirim ulang OTP.",
-			"user":  user,
-		})
-		return
-	}
+	go func(email, token string) {
+		if err := sendVerificationEmail(email, token); err != nil {
+			log.Printf("Failed to send verification email to %s: %v", email, err)
+		}
+	}(user.Email, verificationToken)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Akun berhasil dibuat. Masukkan kode OTP yang dikirim ke email sebelum login.",
@@ -198,13 +195,43 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := generateToken(user.UserID)
+	if req.DeviceToken != nil && *req.DeviceToken != "" {
+		// Verify device token
+		if _, err := h.repo.VerifyTrustedDevice(email, *req.DeviceToken); err == nil {
+			// Device token valid, bypass OTP
+			token, err := generateToken(user.UserID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"token": token, "user": *user, "require_otp": false, "device_token": *req.DeviceToken})
+			return
+		}
+	}
+
+	// Device token invalid or not provided, generate OTP
+	otp, err := generateEmailVerificationOTP()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate OTP"})
 		return
 	}
 
-	c.JSON(http.StatusOK, model.AuthResponse{Token: token, User: *user})
+	if err := h.repo.SaveLoginOtpToken(user.UserID, otp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save OTP"})
+		return
+	}
+
+	go func(email, token string) {
+		// Using the same email sender function for simplicity, though the template might ideally say "Login OTP"
+		if err := sendVerificationEmail(email, token); err != nil {
+			log.Printf("Failed to send login OTP email to %s: %v", email, err)
+		}
+	}(user.Email, otp)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "OTP telah dikirim ke email Anda",
+		"require_otp": true,
+	})
 }
 
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
@@ -449,7 +476,7 @@ func (h *AuthHandler) UpdateLocation(c *gin.Context) {
 func generateToken(userID string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
-		"exp":     time.Now().Add(7 * 24 * time.Hour).Unix(),
+		"exp":     time.Now().Add(60 * 24 * time.Hour).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
@@ -553,4 +580,145 @@ func sendMailWithTimeout(host string, port string, auth smtp.Auth, from string, 
 	}
 
 	return client.Quit()
+}
+
+// Trusted Devices & Login OTP
+
+func (h *AuthHandler) VerifyLoginOtp(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+		OTP   string `json:"otp" binding:"required,len=6"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	user, err := h.repo.VerifyLoginOtpToken(email, req.OTP)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Kode OTP salah atau sudah kedaluwarsa"})
+		return
+	}
+
+	token, err := generateToken(user.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	// Generate new device token (UUID-like random hex string)
+	b := make([]byte, 16)
+	rand.Read(b)
+	deviceTokenStr := fmt.Sprintf("%x", b)
+
+	if err := h.repo.SaveTrustedDevice(user.UserID, deviceTokenStr); err != nil {
+		log.Printf("Failed to save trusted device token: %v", err)
+		// We can still proceed even if saving device token fails, they just won't get bypass next time.
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"token":        token,
+		"device_token": deviceTokenStr,
+		"user":         *user,
+	})
+}
+
+// Password Reset
+
+func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	user, err := h.repo.FindByEmail(email)
+	if err != nil {
+		// Do not leak if email exists or not, but for our case, user requested 404
+		c.JSON(http.StatusNotFound, gin.H{"error": "Email tidak terdaftar"})
+		return
+	}
+	if !user.EmailVerified {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Email belum diverifikasi"})
+		return
+	}
+
+	otp, err := generateEmailVerificationOTP()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate OTP"})
+		return
+	}
+
+	if err := h.repo.SavePasswordResetToken(user.UserID, otp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save OTP"})
+		return
+	}
+
+	go func(email, token string) {
+		if err := sendVerificationEmail(email, token); err != nil {
+			log.Printf("Failed to send password reset OTP email to %s: %v", email, err)
+		}
+	}(user.Email, otp)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Kode OTP untuk reset password telah dikirim ke email Anda"})
+}
+
+func (h *AuthHandler) VerifyResetOtp(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+		OTP   string `json:"otp" binding:"required,len=6"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	_, err := h.repo.VerifyPasswordResetToken(email, req.OTP)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Kode OTP salah atau sudah kedaluwarsa"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Kode OTP valid"})
+}
+
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	var req struct {
+		Email       string `json:"email" binding:"required,email"`
+		OTP         string `json:"otp" binding:"required,len=6"`
+		NewPassword string `json:"new_password" binding:"required,min=6"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	userID, err := h.repo.VerifyPasswordResetToken(email, req.OTP)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Kode OTP salah atau sudah kedaluwarsa"})
+		return
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process new password"})
+		return
+	}
+
+	if err := h.repo.UpdatePassword(userID, string(hashed)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengubah password"})
+		return
+	}
+
+	if err := h.repo.MarkPasswordResetTokenUsed(req.OTP); err != nil {
+		log.Printf("Failed to mark reset token used: %v", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Password berhasil diubah. Silakan login."})
 }
