@@ -504,68 +504,74 @@ func sendVerificationEmail(to string, token string, subject string, title string
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>%s</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #F3F4F6;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+    </style>
 </head>
-<body style="margin: 0; padding: 0; background-color: #F9FAFB; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;">
-    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="background-color: #F9FAFB; padding: 40px 20px;">
+<body style="margin: 0; padding: 0; background-color: #F3F4F6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="background-color: #F3F4F6; padding: 40px 20px;">
         <tr>
             <td align="center">
-                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="max-width: 500px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden; border: 1px solid #E5E7EB;">
-                    <!-- HEADER ACCENT BAR -->
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="max-width: 480px; background-color: #ffffff; border-radius: 24px; box-shadow: 0 10px 25px rgba(194, 26, 26, 0.05); overflow: hidden; border: 1px solid #E5E7EB;">
+                    <!-- HEADER GRADIENT BAR -->
                     <tr>
-                        <td height="6" style="background-color: #C21A1A;"></td>
-                    </tr>
-                    
-                    <!-- HEADER CONTENT -->
-                    <tr>
-                        <td align="center" style="padding: 32px 32px 20px 32px;">
+                        <td align="center" style="background: linear-gradient(135deg, #C21A1A 0%%, #E53E3E 100%%); padding: 36px 32px 32px 32px;">
                             <!-- SHIELD ICON / BRAND -->
-                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 16px;">
+                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">
                                 <tr>
-                                    <td align="center" style="background-color: #FFF5F5; border-radius: 50%%; width: 64px; height: 64px; text-align: center; vertical-align: middle;">
-                                        <span style="font-size: 32px; line-height: 64px; color: #C21A1A; display: block; margin: 0;">🛡️</span>
+                                    <td align="center" style="background-color: rgba(255, 255, 255, 0.15); border-radius: 20px; width: 56px; height: 56px; text-align: center; vertical-align: middle; border: 1px solid rgba(255, 255, 255, 0.25);">
+                                        <span style="font-size: 28px; line-height: 56px; display: block; margin: 0;">🛡️</span>
                                     </td>
                                 </tr>
                             </table>
-                            <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #1A1A1A; letter-spacing: 0.5px;">SAFE</h1>
-                            <p style="margin: 4px 0 0 0; font-size: 13px; font-weight: 600; color: #C21A1A; text-transform: uppercase; letter-spacing: 1.5px;">%s</p>
+                            <h1 style="margin: 0; font-size: 26px; font-weight: 800; color: #ffffff; letter-spacing: 0.5px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">SAFE</h1>
+                            <p style="margin: 6px 0 0 0; font-size: 11px; font-weight: 700; color: rgba(255, 255, 255, 0.9); text-transform: uppercase; letter-spacing: 2px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">%s</p>
                         </td>
                     </tr>
                     
                     <!-- BODY CONTENT -->
                     <tr>
-                        <td style="padding: 0 32px 24px 32px; color: #374151; font-size: 15px; line-height: 1.6;">
-                            <p style="margin-top: 0; margin-bottom: 12px; font-weight: 600; color: #1A1A1A;">Halo,</p>
-                            <p style="margin-top: 0; margin-bottom: 24px;">%s</p>
+                        <td style="padding: 40px 32px 32px 32px; color: #374151; font-size: 15px; line-height: 1.6;">
+                            <p style="margin-top: 0; margin-bottom: 12px; font-weight: 700; color: #111827; font-size: 17px;">Halo,</p>
+                            <p style="margin-top: 0; margin-bottom: 28px; color: #4B5563;">%s</p>
                             
                             <!-- OTP BOX -->
-                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="margin-bottom: 24px;">
+                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="margin-bottom: 28px;">
                                 <tr>
-                                    <td align="center" style="background-color: #FFF5F5; border: 1px dashed #FFD1D1; border-radius: 12px; padding: 20px 0;">
-                                        <span style="font-family: 'Courier New', Courier, monospace; font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #C21A1A; display: block; padding-left: 8px;">%s</span>
+                                    <td align="center" style="background-color: #FFF5F5; border: 1px dashed #FEB2B2; border-radius: 16px; padding: 24px 0;">
+                                        <span style="font-size: 11px; font-weight: 700; color: #E53E3E; text-transform: uppercase; letter-spacing: 2px; display: block; margin-bottom: 8px;">KODE VERIFIKASI OTP</span>
+                                        <span style="font-family: 'Courier New', Courier, monospace; font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #C21A1A; display: block; padding-left: 10px; margin: 0;">%s</span>
                                     </td>
                                 </tr>
                             </table>
                             
                             <!-- INFORMATION -->
-                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="background-color: #F9FAFB; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="background-color: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 16px; margin-bottom: 24px;">
                                 <tr>
-                                    <td style="font-size: 13px; color: #6B7280; line-height: 1.5;">
-                                        • Kode ini berlaku selama <strong>5 menit</strong>.<br>
-                                        • Demi keamanan akun Anda, <strong>jangan bagikan kode ini</strong> kepada siapa pun.
+                                    <td style="font-size: 13px; color: #6B7280; line-height: 1.6;">
+                                        <span style="color: #C21A1A; font-weight: bold; margin-right: 4px;">•</span> Kode ini berlaku selama <strong>5 menit</strong>.<br>
+                                        <span style="color: #C21A1A; font-weight: bold; margin-right: 4px;">•</span> Demi keamanan akun Anda, <strong>jangan bagikan kode ini</strong> kepada siapa pun.
                                     </td>
                                 </tr>
                             </table>
                             
-                            <p style="margin: 0; font-size: 13px; color: #9CA3AF; text-align: center;">Jika Anda tidak merasa meminta kode ini, silakan abaikan email ini dengan aman.</p>
+                            <p style="margin: 0; font-size: 12px; color: #9CA3AF; text-align: center; line-height: 1.5;">Jika Anda tidak merasa meminta kode ini, silakan abaikan email ini dengan aman.</p>
                         </td>
                     </tr>
                     
                     <!-- FOOTER -->
                     <tr>
-                        <td align="center" style="padding: 24px 32px; background-color: #F9FAFB; border-top: 1px solid #E5E7EB; color: #9CA3AF; font-size: 12px;">
-                            <p style="margin: 0 0 4px 0; font-weight: 600; color: #6B7280;">SAFE App</p>
-                            <p style="margin: 0;">Sistem Pengamanan dan Respons Darurat Cepat</p>
-                            <p style="margin: 12px 0 0 0; font-size: 11px;">© 2026 SAFE. Hak Cipta Dilindungi.</p>
+                        <td align="center" style="padding: 32px; background-color: #F9FAFB; border-top: 1px solid #E5E7EB; color: #9CA3AF; font-size: 12px;">
+                            <p style="margin: 0 0 4px 0; font-weight: 700; color: #4B5563; font-size: 13px;">SAFE App</p>
+                            <p style="margin: 0; color: #6B7280; font-size: 12px;">Sistem Pengamanan dan Respons Darurat Cepat</p>
+                            <p style="margin: 16px 0 0 0; font-size: 11px; color: #9CA3AF;">© 2026 SAFE. Hak Cipta Dilindungi.</p>
                         </td>
                     </tr>
                 </table>
