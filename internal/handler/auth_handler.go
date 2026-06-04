@@ -2,12 +2,15 @@ package handler
 
 import (
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"math/big"
+	"net"
 	"net/http"
+	"net/smtp"
 	"os"
 	"strings"
 	"time"
@@ -17,7 +20,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/resend/resend-go/v3"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -488,15 +490,16 @@ func generateEmailVerificationOTP() (string, error) {
 }
 
 func sendVerificationEmail(to string, token string, subject string, title string, description string) error {
-	apiKey := os.Getenv("RESEND_API_KEY")
-	from := os.Getenv("RESEND_FROM")
+	host := os.Getenv("SMTP_HOST")
+	port := os.Getenv("SMTP_PORT")
+	username := os.Getenv("SMTP_USERNAME")
+	password := os.Getenv("SMTP_PASSWORD")
+	from := os.Getenv("SMTP_FROM")
 
-	if apiKey == "" || from == "" {
+	if host == "" || port == "" || username == "" || password == "" || from == "" {
 		log.Printf("Email verification OTP for %s: %s (Subject: %s)", to, token, subject)
-		return fmt.Errorf("RESEND_API_KEY and RESEND_FROM must be configured")
+		return fmt.Errorf("SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM must be configured")
 	}
-
-	client := resend.NewClient(apiKey)
 
 	htmlTemplate := `<!DOCTYPE html>
 <html lang="id">
@@ -583,19 +586,82 @@ func sendVerificationEmail(to string, token string, subject string, title string
 
 	body := fmt.Sprintf(htmlTemplate, subject, title, description, token)
 
-	params := &resend.SendEmailRequest{
-		From:    from,
-		To:      []string{to},
-		Subject: subject,
-		Html:    body,
-	}
+	message := []byte("To: " + to + "\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: text/html; charset=\"UTF-8\"\r\n\r\n" +
+		body)
 
-	_, err := client.Emails.Send(params)
+	auth := smtp.PlainAuth("", username, password, host)
+	return sendMailWithTimeout(host, port, auth, from, []string{to}, message, 10*time.Second)
+}
+
+func sendMailWithTimeout(host string, port string, auth smtp.Auth, from string, to []string, msg []byte, timeout time.Duration) error {
+	addr := net.JoinHostPort(host, port)
+	dialer := &net.Dialer{Timeout: timeout}
+
+	var conn net.Conn
+	var err error
+	if port == "465" {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+			ServerName: host,
+			MinVersion: tls.VersionTLS12,
+		})
+	} else {
+		conn, err = dialer.Dial("tcp", addr)
+	}
 	if err != nil {
-		return fmt.Errorf("failed to send email via Resend: %w", err)
+		return err
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(timeout))
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if port != "465" {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return fmt.Errorf("smtp server does not support STARTTLS")
+		}
+		config := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+		if err := client.StartTLS(config); err != nil {
+			return err
+		}
 	}
 
-	return nil
+	if auth != nil {
+		if ok, _ := client.Extension("AUTH"); ok {
+			if err := client.Auth(auth); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := client.Mail(from); err != nil {
+		return err
+	}
+	for _, recipient := range to {
+		if err := client.Rcpt(recipient); err != nil {
+			return err
+		}
+	}
+
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := writer.Write(msg); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	return client.Quit()
 }
 
 // Trusted Devices & Login OTP
