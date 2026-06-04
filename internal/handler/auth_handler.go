@@ -2,15 +2,12 @@ package handler
 
 import (
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"math/big"
-	"net"
 	"net/http"
-	"net/smtp"
 	"os"
 	"strings"
 	"time"
@@ -20,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/resend/resend-go/v3"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -93,7 +91,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	go func(email, token string) {
-		if err := sendVerificationEmail(email, token); err != nil {
+		if err := sendVerificationEmail(email, token, "Kode OTP Verifikasi SAFE", "Verifikasi Pendaftaran", "Terima kasih telah mendaftar di SAFE. Silakan gunakan kode OTP di bawah ini untuk memverifikasi alamat email Anda:"); err != nil {
 			log.Printf("Failed to send verification email to %s: %v", email, err)
 		}
 	}(user.Email, verificationToken)
@@ -222,8 +220,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	go func(email, token string) {
-		// Using the same email sender function for simplicity, though the template might ideally say "Login OTP"
-		if err := sendVerificationEmail(email, token); err != nil {
+		if err := sendVerificationEmail(email, token, "Kode OTP Login SAFE", "Verifikasi Login", "Kami mendeteksi aktivitas login baru pada akun Anda. Gunakan kode OTP di bawah ini untuk melanjutkan:"); err != nil {
 			log.Printf("Failed to send login OTP email to %s: %v", email, err)
 		}
 	}(user.Email, otp)
@@ -296,7 +293,7 @@ func (h *AuthHandler) ResendVerificationEmail(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save email verification OTP"})
 		return
 	}
-	if err := sendVerificationEmail(user.Email, verificationToken); err != nil {
+	if err := sendVerificationEmail(user.Email, verificationToken, "Kode OTP Verifikasi SAFE", "Verifikasi Pendaftaran", "Berikut adalah kode OTP verifikasi pendaftaran akun SAFE Anda yang baru:"); err != nil {
 		log.Printf("Failed to resend verification email to %s: %v", user.Email, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kode OTP gagal dikirim. Hubungi admin aplikasi."})
 		return
@@ -490,96 +487,109 @@ func generateEmailVerificationOTP() (string, error) {
 	return fmt.Sprintf("%06d", n.Int64()), nil
 }
 
-func sendVerificationEmail(to string, token string) error {
-	host := os.Getenv("SMTP_HOST")
-	port := os.Getenv("SMTP_PORT")
-	username := os.Getenv("SMTP_USERNAME")
-	password := os.Getenv("SMTP_PASSWORD")
-	from := os.Getenv("SMTP_FROM")
+func sendVerificationEmail(to string, token string, subject string, title string, description string) error {
+	apiKey := os.Getenv("RESEND_API_KEY")
+	from := os.Getenv("RESEND_FROM")
 
-	if host == "" || port == "" || username == "" || password == "" || from == "" {
-		log.Printf("Email verification OTP for %s: %s", to, token)
-		return fmt.Errorf("SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM must be configured")
+	if apiKey == "" || from == "" {
+		log.Printf("Email verification OTP for %s: %s (Subject: %s)", to, token, subject)
+		return fmt.Errorf("RESEND_API_KEY and RESEND_FROM must be configured")
 	}
 
-	subject := "Kode OTP Verifikasi SAFE"
-	body := fmt.Sprintf("Halo,\n\nKode OTP verifikasi email SAFE Anda adalah:\n\n%s\n\nKode berlaku selama 5 menit. Jangan bagikan kode ini kepada siapa pun.\n", token)
-	message := []byte("To: " + to + "\r\n" +
-		"Subject: " + subject + "\r\n" +
-		"MIME-Version: 1.0\r\n" +
-		"Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n" +
-		body)
+	client := resend.NewClient(apiKey)
 
-	auth := smtp.PlainAuth("", username, password, host)
-	return sendMailWithTimeout(host, port, auth, from, []string{to}, message, 10*time.Second)
-}
+	htmlTemplate := `<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>%s</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #F9FAFB; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="background-color: #F9FAFB; padding: 40px 20px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="max-width: 500px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden; border: 1px solid #E5E7EB;">
+                    <!-- HEADER ACCENT BAR -->
+                    <tr>
+                        <td height="6" style="background-color: #C21A1A;"></td>
+                    </tr>
+                    
+                    <!-- HEADER CONTENT -->
+                    <tr>
+                        <td align="center" style="padding: 32px 32px 20px 32px;">
+                            <!-- SHIELD ICON / BRAND -->
+                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 16px;">
+                                <tr>
+                                    <td align="center" style="background-color: #FFF5F5; border-radius: 50%%; width: 64px; height: 64px; text-align: center; vertical-align: middle;">
+                                        <span style="font-size: 32px; line-height: 64px; color: #C21A1A; display: block; margin: 0;">🛡️</span>
+                                    </td>
+                                </tr>
+                            </table>
+                            <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #1A1A1A; letter-spacing: 0.5px;">SAFE</h1>
+                            <p style="margin: 4px 0 0 0; font-size: 13px; font-weight: 600; color: #C21A1A; text-transform: uppercase; letter-spacing: 1.5px;">%s</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- BODY CONTENT -->
+                    <tr>
+                        <td style="padding: 0 32px 24px 32px; color: #374151; font-size: 15px; line-height: 1.6;">
+                            <p style="margin-top: 0; margin-bottom: 12px; font-weight: 600; color: #1A1A1A;">Halo,</p>
+                            <p style="margin-top: 0; margin-bottom: 24px;">%s</p>
+                            
+                            <!-- OTP BOX -->
+                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="margin-bottom: 24px;">
+                                <tr>
+                                    <td align="center" style="background-color: #FFF5F5; border: 1px dashed #FFD1D1; border-radius: 12px; padding: 20px 0;">
+                                        <span style="font-family: 'Courier New', Courier, monospace; font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #C21A1A; display: block; padding-left: 8px;">%s</span>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- INFORMATION -->
+                            <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%%" style="background-color: #F9FAFB; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px;">
+                                <tr>
+                                    <td style="font-size: 13px; color: #6B7280; line-height: 1.5;">
+                                        • Kode ini berlaku selama <strong>5 menit</strong>.<br>
+                                        • Demi keamanan akun Anda, <strong>jangan bagikan kode ini</strong> kepada siapa pun.
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <p style="margin: 0; font-size: 13px; color: #9CA3AF; text-align: center;">Jika Anda tidak merasa meminta kode ini, silakan abaikan email ini dengan aman.</p>
+                        </td>
+                    </tr>
+                    
+                    <!-- FOOTER -->
+                    <tr>
+                        <td align="center" style="padding: 24px 32px; background-color: #F9FAFB; border-top: 1px solid #E5E7EB; color: #9CA3AF; font-size: 12px;">
+                            <p style="margin: 0 0 4px 0; font-weight: 600; color: #6B7280;">SAFE App</p>
+                            <p style="margin: 0;">Sistem Pengamanan dan Respons Darurat Cepat</p>
+                            <p style="margin: 12px 0 0 0; font-size: 11px;">© 2026 SAFE. Hak Cipta Dilindungi.</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>`
 
-func sendMailWithTimeout(host string, port string, auth smtp.Auth, from string, to []string, msg []byte, timeout time.Duration) error {
-	addr := net.JoinHostPort(host, port)
-	dialer := &net.Dialer{Timeout: timeout}
+	body := fmt.Sprintf(htmlTemplate, subject, title, description, token)
 
-	var conn net.Conn
-	var err error
-	if port == "465" {
-		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
-			ServerName: host,
-			MinVersion: tls.VersionTLS12,
-		})
-	} else {
-		conn, err = dialer.Dial("tcp", addr)
+	params := &resend.SendEmailRequest{
+		From:    from,
+		To:      []string{to},
+		Subject: subject,
+		Html:    body,
 	}
+
+	_, err := client.Emails.Send(params)
 	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(timeout))
-
-	client, err := smtp.NewClient(conn, host)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-
-	if port != "465" {
-		if ok, _ := client.Extension("STARTTLS"); !ok {
-			return fmt.Errorf("smtp server does not support STARTTLS")
-		}
-		config := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
-		if err := client.StartTLS(config); err != nil {
-			return err
-		}
+		return fmt.Errorf("failed to send email via Resend: %w", err)
 	}
 
-	if auth != nil {
-		if ok, _ := client.Extension("AUTH"); ok {
-			if err := client.Auth(auth); err != nil {
-				return err
-			}
-		}
-	}
-
-	if err := client.Mail(from); err != nil {
-		return err
-	}
-	for _, recipient := range to {
-		if err := client.Rcpt(recipient); err != nil {
-			return err
-		}
-	}
-
-	writer, err := client.Data()
-	if err != nil {
-		return err
-	}
-	if _, err := writer.Write(msg); err != nil {
-		_ = writer.Close()
-		return err
-	}
-	if err := writer.Close(); err != nil {
-		return err
-	}
-
-	return client.Quit()
+	return nil
 }
 
 // Trusted Devices & Login OTP
@@ -659,7 +669,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	}
 
 	go func(email, token string) {
-		if err := sendVerificationEmail(email, token); err != nil {
+		if err := sendVerificationEmail(email, token, "Kode OTP Reset Password SAFE", "Reset Kata Sandi", "Kami menerima permintaan untuk mengatur ulang kata sandi akun SAFE Anda. Gunakan kode OTP di bawah ini untuk melanjutkan:"); err != nil {
 			log.Printf("Failed to send password reset OTP email to %s: %v", email, err)
 		}
 	}(user.Email, otp)
@@ -691,7 +701,7 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	var req struct {
 		Email       string `json:"email" binding:"required,email"`
 		OTP         string `json:"otp" binding:"required,len=6"`
-		NewPassword string `json:"new_password" binding:"required,min=6"`
+		NewPassword string `json:"new_password" binding:"required,min=8"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
