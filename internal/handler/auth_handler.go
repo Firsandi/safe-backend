@@ -2,10 +2,13 @@ package handler
 
 import (
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
+	"net"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -37,6 +40,14 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	if err := h.repo.PrepareEmailForRegistration(email); err != nil {
+		if errors.Is(err, repository.ErrEmailAlreadyRegistered) {
+			c.JSON(http.StatusConflict, gin.H{"error": "Email sudah terdaftar. Silakan login."})
+			return
+		}
+		if errors.Is(err, repository.ErrEmailVerificationIsPending) {
+			c.JSON(http.StatusConflict, gin.H{"error": "Email sudah didaftarkan dan menunggu verifikasi OTP."})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to prepare registration"})
 		return
 	}
@@ -81,14 +92,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	if err := sendVerificationEmail(user.Email, verificationToken); err != nil {
-		log.Printf("Failed to send verification email to %s: %v", user.Email, err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Akun berhasil dibuat, tetapi kode OTP gagal dikirim. Periksa konfigurasi email server atau kirim ulang OTP.",
-			"user":  user,
-		})
-		return
-	}
+	go func(email, token string) {
+		if err := sendVerificationEmail(email, token); err != nil {
+			log.Printf("Failed to send verification email to %s: %v", email, err)
+		}
+	}(user.Email, verificationToken)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Akun berhasil dibuat. Masukkan kode OTP yang dikirim ke email sebelum login.",
@@ -187,13 +195,43 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := generateToken(user.UserID)
+	if req.DeviceToken != nil && *req.DeviceToken != "" {
+		// Verify device token
+		if _, err := h.repo.VerifyTrustedDevice(email, *req.DeviceToken); err == nil {
+			// Device token valid, bypass OTP
+			token, err := generateToken(user.UserID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"token": token, "user": *user, "require_otp": false, "device_token": *req.DeviceToken})
+			return
+		}
+	}
+
+	// Device token invalid or not provided, generate OTP
+	otp, err := generateEmailVerificationOTP()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate OTP"})
 		return
 	}
 
-	c.JSON(http.StatusOK, model.AuthResponse{Token: token, User: *user})
+	if err := h.repo.SaveLoginOtpToken(user.UserID, otp); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save OTP"})
+		return
+	}
+
+	go func(email, token string) {
+		// Using the same email sender function for simplicity, though the template might ideally say "Login OTP"
+		if err := sendVerificationEmail(email, token); err != nil {
+			log.Printf("Failed to send login OTP email to %s: %v", email, err)
+		}
+	}(user.Email, otp)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":     "OTP telah dikirim ke email Anda",
+		"require_otp": true,
+	})
 }
 
 func (h *AuthHandler) VerifyEmail(c *gin.Context) {
@@ -275,7 +313,7 @@ func (h *AuthHandler) UpdateFcmToken(c *gin.Context) {
 	}
 
 	var req struct {
-		FcmToken string `json:"fcm_token" binding:"required"`
+		FcmToken string `json:"fcm_token"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -333,6 +371,7 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 	}
 
 	var email string
+	var name string
 
 	// Jika ada ID Token asli, lakukan verifikasi keamanan Google
 	if req.IDToken != "" && req.IDToken != "simulated_token" {
@@ -359,6 +398,7 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 			return
 		}
 		email = strings.ToLower(strings.TrimSpace(googleClaims.Email))
+		name = strings.TrimSpace(googleClaims.Name)
 	} else {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Token Google wajib valid. Mode simulasi tidak diizinkan untuk login."})
 		return
@@ -374,7 +414,6 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 			return
 		}
 
-		name := req.Name
 		if name == "" {
 			name = strings.Split(email, "@")[0]
 		}
@@ -437,7 +476,7 @@ func (h *AuthHandler) UpdateLocation(c *gin.Context) {
 func generateToken(userID string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
-		"exp":     time.Now().Add(7 * 24 * time.Hour).Unix(),
+		"exp":     time.Now().Add(60 * 24 * time.Hour).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
@@ -464,71 +503,250 @@ func sendVerificationEmail(to string, token string) error {
 	}
 
 	subject := "Kode OTP Verifikasi SAFE"
-	body := fmt.Sprintf("Halo,\n\nKode OTP verifikasi email SAFE Anda adalah:\n\n%s\n\nKode berlaku selama 5 menit. Jangan bagikan kode ini kepada siapa pun.\n", token)
+	body := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OTP</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #ffffff; color: #111111;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; padding: 20px 0;">
+    <tr>
+      <td align="left" style="padding: 0 20px;">
+        <p style="font-size: 16px; line-height: 1.5; color: #111111; margin: 0 0 20px 0;">Berikut adalah kode verifikasi OTP Anda:</p>
+        <div style="font-family: monospace; font-size: 32px; font-weight: bold; color: #111111; letter-spacing: 4px; margin-bottom: 20px;">%s</div>
+        <p style="font-size: 14px; line-height: 1.5; color: #666666; margin: 0;">Kode ini berlaku selama 5 menit. Jangan bagikan kode ini kepada siapa pun.</p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`, token)
+
 	message := []byte("From: SAFE <" + from + ">\r\n" +
 		"Reply-To: " + from + "\r\n" +
 		"To: " + to + "\r\n" +
 		"Subject: " + subject + "\r\n" +
 		"MIME-Version: 1.0\r\n" +
-		"Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n" +
+		"Content-Type: text/html; charset=\"UTF-8\"\r\n\r\n" +
 		body)
 
 	auth := smtp.PlainAuth("", username, password, host)
 	return smtp.SendMail(host+":"+port, auth, from, []string{to}, message)
 }
 
+func sendPasswordResetEmail(to string, token string) error {
+	host := os.Getenv("SMTP_HOST")
+	port := os.Getenv("SMTP_PORT")
+	username := os.Getenv("SMTP_USERNAME")
+	password := os.Getenv("SMTP_PASSWORD")
+	from := os.Getenv("SMTP_FROM")
+
+	if host == "" || port == "" || username == "" || password == "" || from == "" {
+		log.Printf("Password reset OTP for %s: %s", to, token)
+		return fmt.Errorf("SMTP settings not configured")
+	}
+
+	subject := "Reset Password SAFE"
+	body := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OTP</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #ffffff; color: #111111;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; padding: 20px 0;">
+    <tr>
+      <td align="left" style="padding: 0 20px;">
+        <p style="font-size: 16px; line-height: 1.5; color: #111111; margin: 0 0 20px 0;">Berikut adalah kode OTP untuk mereset password Anda:</p>
+        <div style="font-family: monospace; font-size: 32px; font-weight: bold; color: #111111; letter-spacing: 4px; margin-bottom: 20px;">%s</div>
+        <p style="font-size: 14px; line-height: 1.5; color: #666666; margin: 0;">Kode ini berlaku selama 5 menit. Jika Anda tidak meminta reset password, abaikan email ini.</p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`, token)
+
+	message := []byte("From: SAFE <" + from + ">\r\n" +
+		"Reply-To: " + from + "\r\n" +
+		"To: " + to + "\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"MIME-Version: 1.0\r\n" +
+		"Content-Type: text/html; charset=\"UTF-8\"\r\n\r\n" +
+		body)
+
+	auth := smtp.PlainAuth("", username, password, host)
+	return sendMailWithTimeout(host, port, auth, from, []string{to}, message, 10*time.Second)
+}
+
+func sendMailWithTimeout(host string, port string, auth smtp.Auth, from string, to []string, msg []byte, timeout time.Duration) error {
+	addr := net.JoinHostPort(host, port)
+	dialer := &net.Dialer{Timeout: timeout}
+
+	var conn net.Conn
+	var err error
+	if port == "465" {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+			ServerName: host,
+			MinVersion: tls.VersionTLS12,
+		})
+	} else {
+		conn, err = dialer.Dial("tcp", addr)
+	}
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(timeout))
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if port != "465" {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return fmt.Errorf("smtp server does not support STARTTLS")
+		}
+		config := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
+		if err := client.StartTLS(config); err != nil {
+			return err
+		}
+	}
+
+	if auth != nil {
+		if ok, _ := client.Extension("AUTH"); ok {
+			if err := client.Auth(auth); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := client.Mail(from); err != nil {
+		return err
+	}
+	for _, recipient := range to {
+		if err := client.Rcpt(recipient); err != nil {
+			return err
+		}
+	}
+
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := writer.Write(msg); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	return client.Quit()
+}
+
+// Trusted Devices & Login OTP
+
+func (h *AuthHandler) VerifyLoginOtp(c *gin.Context) {
+	var req struct {
+		Email string `json:"email" binding:"required,email"`
+		OTP   string `json:"otp" binding:"required,len=6"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	user, err := h.repo.VerifyLoginOtpToken(email, req.OTP)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Kode OTP salah atau sudah kedaluwarsa"})
+		return
+	}
+
+	token, err := generateToken(user.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	// Generate new device token (UUID-like random hex string)
+	b := make([]byte, 16)
+	rand.Read(b)
+	deviceTokenStr := fmt.Sprintf("%x", b)
+
+	if err := h.repo.SaveTrustedDevice(user.UserID, deviceTokenStr); err != nil {
+		log.Printf("Failed to save trusted device token: %v", err)
+		// We can still proceed even if saving device token fails, they just won't get bypass next time.
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"token":        token,
+		"device_token": deviceTokenStr,
+		"user":         *user,
+	})
+}
+
+// Password Reset
+
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	var req struct {
 		Email string `json:"email" binding:"required,email"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Format email tidak valid"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	user, err := h.repo.FindByEmail(email)
 	if err != nil {
+		// Do not leak if email exists or not, but for our case, user requested 404
 		c.JSON(http.StatusNotFound, gin.H{"error": "Email tidak terdaftar"})
+		return
+	}
+	if !user.EmailVerified {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Email belum diverifikasi"})
 		return
 	}
 
 	otp, err := generateEmailVerificationOTP()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat kode OTP"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate OTP"})
 		return
 	}
 
 	if err := h.repo.SavePasswordResetToken(user.UserID, otp); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan kode OTP"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save OTP"})
 		return
 	}
 
-	if err := sendPasswordResetEmail(user.Email, otp); err != nil {
-		log.Printf("Failed to send reset password email to %s: %v", user.Email, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kode OTP gagal dikirim. Periksa koneksi email."})
-		return
-	}
+	go func(email, token string) {
+		if err := sendPasswordResetEmail(email, token); err != nil {
+			log.Printf("Failed to send password reset OTP email to %s: %v", email, err)
+		}
+	}(user.Email, otp)
 
-	c.JSON(http.StatusOK, gin.H{"message": "Kode OTP berhasil dikirim ke email Anda"})
+	c.JSON(http.StatusOK, gin.H{"message": "Kode OTP untuk reset password telah dikirim ke email Anda"})
 }
 
-func (h *AuthHandler) VerifyPasswordResetOTP(c *gin.Context) {
+func (h *AuthHandler) VerifyResetOtp(c *gin.Context) {
 	var req struct {
 		Email string `json:"email" binding:"required,email"`
 		OTP   string `json:"otp" binding:"required,len=6"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Email dan kode OTP 6 digit wajib diisi"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	email := strings.ToLower(strings.TrimSpace(req.Email))
-	otp := strings.TrimSpace(req.OTP)
-
-	_, err := h.repo.VerifyPasswordResetToken(email, otp)
+	_, err := h.repo.VerifyPasswordResetToken(email, req.OTP)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Kode OTP tidak valid atau sudah kedaluwarsa"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Kode OTP salah atau sudah kedaluwarsa"})
 		return
 	}
 
@@ -547,52 +765,26 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	}
 
 	email := strings.ToLower(strings.TrimSpace(req.Email))
-	otp := strings.TrimSpace(req.OTP)
-
-	userID, err := h.repo.VerifyPasswordResetToken(email, otp)
+	userID, err := h.repo.VerifyPasswordResetToken(email, req.OTP)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Kode OTP tidak valid atau sudah kedaluwarsa"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Kode OTP salah atau sudah kedaluwarsa"})
 		return
 	}
 
 	hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memproses password baru"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process new password"})
 		return
 	}
 
 	if err := h.repo.UpdatePassword(userID, string(hashed)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan password baru"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengubah password"})
 		return
 	}
 
-	_ = h.repo.MarkPasswordResetTokenUsed(otp)
-
-	c.JSON(http.StatusOK, gin.H{"message": "Password berhasil diubah. Silakan login."})
-}
-
-func sendPasswordResetEmail(to string, token string) error {
-	host := os.Getenv("SMTP_HOST")
-	port := os.Getenv("SMTP_PORT")
-	username := os.Getenv("SMTP_USERNAME")
-	password := os.Getenv("SMTP_PASSWORD")
-	from := os.Getenv("SMTP_FROM")
-
-	if host == "" || port == "" || username == "" || password == "" || from == "" {
-		log.Printf("Password reset OTP for %s: %s", to, token)
-		return fmt.Errorf("SMTP settings not configured")
+	if err := h.repo.MarkPasswordResetTokenUsed(req.OTP); err != nil {
+		log.Printf("Failed to mark reset token used: %v", err)
 	}
 
-	subject := "Reset Password SAFE"
-	body := fmt.Sprintf("Halo,\n\nKode OTP untuk mereset password aplikasi SAFE Anda adalah:\n\n%s\n\nKode berlaku selama 5 menit. Jika Anda tidak meminta reset password, abaikan email ini.\n", token)
-	message := []byte("From: SAFE <" + from + ">\r\n" +
-		"Reply-To: " + from + "\r\n" +
-		"To: " + to + "\r\n" +
-		"Subject: " + subject + "\r\n" +
-		"MIME-Version: 1.0\r\n" +
-		"Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n" +
-		body)
-
-	auth := smtp.PlainAuth("", username, password, host)
-	return smtp.SendMail(host+":"+port, auth, from, []string{to}, message)
+	c.JSON(http.StatusOK, gin.H{"message": "Password berhasil diubah. Silakan login."})
 }

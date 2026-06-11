@@ -2,10 +2,16 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"safe-backend/internal/model"
+)
+
+var (
+	ErrEmailAlreadyRegistered     = errors.New("email already registered")
+	ErrEmailVerificationIsPending = errors.New("email verification is pending")
 )
 
 type UserRepository struct {
@@ -24,7 +30,7 @@ func NewUserRepository(db *sqlx.DB) *UserRepository {
 func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 	var user model.User
 	err := r.db.Get(&user,
-		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, COALESCE(email_verified, false) AS email_verified, created_at, latitude AS last_latitude, longitude AS last_longitude, location_updated_at AS last_location_update FROM users WHERE email=$1",
+		"SELECT u.user_id, u.name, u.email, u.password, u.phone_number, COALESCE(u.profile_image, '') AS profile_image, u.fcm_token, COALESCE(u.email_verified, false) AS email_verified, u.created_at, u.latitude AS last_latitude, u.longitude AS last_longitude, u.location_updated_at AS last_location_update, m.blood_type, m.medical_notes FROM users u LEFT JOIN medical_profiles m ON m.user_id = u.user_id WHERE u.email=$1",
 		email,
 	)
 	if err != nil {
@@ -36,7 +42,7 @@ func (r *UserRepository) FindByEmail(email string) (*model.User, error) {
 func (r *UserRepository) FindByID(id string) (*model.User, error) {
 	var user model.User
 	err := r.db.Get(&user,
-		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, COALESCE(email_verified, false) AS email_verified, created_at, latitude AS last_latitude, longitude AS last_longitude, location_updated_at AS last_location_update FROM users WHERE user_id=$1",
+		"SELECT u.user_id, u.name, u.email, u.password, u.phone_number, COALESCE(u.profile_image, '') AS profile_image, u.fcm_token, COALESCE(u.email_verified, false) AS email_verified, u.created_at, u.latitude AS last_latitude, u.longitude AS last_longitude, u.location_updated_at AS last_location_update, m.blood_type, m.medical_notes FROM users u LEFT JOIN medical_profiles m ON m.user_id = u.user_id WHERE u.user_id=$1",
 		id,
 	)
 	if err != nil {
@@ -58,10 +64,13 @@ func (r *UserRepository) Create(u *model.User) error {
 func (r *UserRepository) PrepareEmailForRegistration(email string) error {
 	existingUser, err := r.FindByEmail(email)
 	if err != nil {
-		return nil
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
 	}
 	if existingUser.EmailVerified {
-		return nil
+		return ErrEmailAlreadyRegistered
 	}
 
 	hasActiveOtp, err := r.HasActiveEmailVerificationToken(existingUser.UserID)
@@ -69,7 +78,7 @@ func (r *UserRepository) PrepareEmailForRegistration(email string) error {
 		return err
 	}
 	if hasActiveOtp {
-		return nil
+		return ErrEmailVerificationIsPending
 	}
 
 	return r.DeleteUnverifiedUserByEmail(email)
@@ -221,7 +230,7 @@ func (r *UserRepository) VerifyEmailByToken(email string, token string) (*model.
 
 	var user model.User
 	err = tx.Get(&user,
-		"SELECT user_id, name, email, password, phone_number, COALESCE(profile_image, '') AS profile_image, fcm_token, COALESCE(email_verified, false) AS email_verified, created_at FROM users WHERE user_id=$1",
+		"SELECT u.user_id, u.name, u.email, u.password, u.phone_number, COALESCE(u.profile_image, '') AS profile_image, u.fcm_token, COALESCE(u.email_verified, false) AS email_verified, u.created_at, u.latitude AS last_latitude, u.longitude AS last_longitude, u.location_updated_at AS last_location_update, m.blood_type, m.medical_notes FROM users u LEFT JOIN medical_profiles m ON m.user_id = u.user_id WHERE u.user_id=$1",
 		userID,
 	)
 	if err != nil {
@@ -282,6 +291,101 @@ func (r *UserRepository) CreateWithMedical(u *model.User, bloodType string, medi
 	return tx.Commit()
 }
 
+// Trusted Devices & Login OTP
+
+func (r *UserRepository) SaveTrustedDevice(userID string, deviceToken string) error {
+	_, err := r.db.Exec(
+		`INSERT INTO trusted_devices (user_id, device_token, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '60 days')`,
+		userID, deviceToken,
+	)
+	return err
+}
+
+func (r *UserRepository) VerifyTrustedDevice(email string, deviceToken string) (*model.User, error) {
+	var user model.User
+	err := r.db.Get(&user,
+		`SELECT u.user_id, u.name, u.email, u.password, u.phone_number, COALESCE(u.profile_image, '') AS profile_image, u.fcm_token, COALESCE(u.email_verified, false) AS email_verified, u.created_at, u.latitude AS last_latitude, u.longitude AS last_longitude, u.location_updated_at AS last_location_update, m.blood_type, m.medical_notes
+         FROM trusted_devices td
+         JOIN users u ON u.user_id = td.user_id
+         LEFT JOIN medical_profiles m ON m.user_id = u.user_id
+         WHERE u.email=$1
+           AND td.device_token=$2
+           AND td.expires_at > NOW()`,
+		email, deviceToken,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *UserRepository) SaveLoginOtpToken(userID string, token string) error {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err = tx.Exec(
+		"UPDATE login_otp_tokens SET used_at=NOW() WHERE user_id=$1 AND used_at IS NULL",
+		userID,
+	); err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(
+		`INSERT INTO login_otp_tokens (user_id, token, expires_at)
+         VALUES ($1, $2, NOW() + INTERVAL '5 minutes')`,
+		userID, token,
+	)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (r *UserRepository) VerifyLoginOtpToken(email string, token string) (*model.User, error) {
+	tx, err := r.db.Beginx()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var userID string
+	err = tx.Get(&userID,
+		`SELECT lot.user_id
+         FROM login_otp_tokens lot
+         JOIN users u ON u.user_id = lot.user_id
+         WHERE u.email=$1
+           AND lot.token=$2
+           AND lot.used_at IS NULL
+           AND lot.expires_at > NOW()`,
+		email, token,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err = tx.Exec("UPDATE login_otp_tokens SET used_at=NOW() WHERE token=$1", token); err != nil {
+		return nil, err
+	}
+
+	var user model.User
+	err = tx.Get(&user,
+		"SELECT u.user_id, u.name, u.email, u.password, u.phone_number, COALESCE(u.profile_image, '') AS profile_image, u.fcm_token, COALESCE(u.email_verified, false) AS email_verified, u.created_at, u.latitude AS last_latitude, u.longitude AS last_longitude, u.location_updated_at AS last_location_update, m.blood_type, m.medical_notes FROM users u LEFT JOIN medical_profiles m ON m.user_id = u.user_id WHERE u.user_id=$1",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, tx.Commit()
+}
+
+// Password Reset
+
 func (r *UserRepository) SavePasswordResetToken(userID string, token string) error {
 	tx, err := r.db.Beginx()
 	if err != nil {
@@ -328,7 +432,7 @@ func (r *UserRepository) MarkPasswordResetTokenUsed(token string) error {
 	return err
 }
 
-func (r *UserRepository) UpdatePassword(userID string, newPassword string) error {
-	_, err := r.db.Exec("UPDATE users SET password=$1 WHERE user_id=$2", newPassword, userID)
+func (r *UserRepository) UpdatePassword(userID string, hashedPassword string) error {
+	_, err := r.db.Exec("UPDATE users SET password=$1 WHERE user_id=$2", hashedPassword, userID)
 	return err
 }

@@ -15,6 +15,8 @@ type User struct {
 	LastLatitude       *float64   `db:"last_latitude"        json:"last_latitude,omitempty"`
 	LastLongitude      *float64   `db:"last_longitude"       json:"last_longitude,omitempty"`
 	LastLocationUpdate *time.Time `db:"last_location_update" json:"last_location_update,omitempty"`
+	BloodType          *string    `db:"blood_type"           json:"blood_type,omitempty"`
+	MedicalNotes       *string    `db:"medical_notes"        json:"medical_notes,omitempty"`
 }
 
 type RegisterRequest struct {
@@ -28,11 +30,13 @@ type RegisterRequest struct {
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"    binding:"required,email"`
-	Password string `json:"password" binding:"required"`
+	Email       string  `json:"email"        binding:"required,email"`
+	Password    string  `json:"password"     binding:"required"`
+	DeviceToken *string `json:"device_token" binding:"omitempty"`
 }
 
 type AuthResponse struct {
-	Token string `json:"token"`
-	User  User   `json:"user"`
+	Token       string  `json:"token"`
+	DeviceToken *string `json:"device_token,omitempty"`
+	User        User    `json:"user"`
 }
