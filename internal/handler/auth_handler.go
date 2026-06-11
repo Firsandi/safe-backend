@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
@@ -93,7 +94,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	go func(email, token string) {
-		if err := sendVerificationEmail(email, token); err != nil {
+		if err := sendVerificationEmail(email, token, "Kode OTP Verifikasi SAFE", "Verifikasi Pendaftaran", "Terima kasih telah mendaftar di SAFE. Silakan gunakan kode OTP di bawah ini untuk memverifikasi alamat email Anda:"); err != nil {
 			log.Printf("Failed to send verification email to %s: %v", email, err)
 		}
 	}(user.Email, verificationToken)
@@ -222,8 +223,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	go func(email, token string) {
-		// Using the same email sender function for simplicity, though the template might ideally say "Login OTP"
-		if err := sendVerificationEmail(email, token); err != nil {
+		if err := sendVerificationEmail(email, token, "Kode OTP Login SAFE", "Verifikasi Login", "Kami mendeteksi aktivitas login baru pada akun Anda. Gunakan kode OTP di bawah ini untuk melanjutkan:"); err != nil {
 			log.Printf("Failed to send login OTP email to %s: %v", email, err)
 		}
 	}(user.Email, otp)
@@ -296,7 +296,7 @@ func (h *AuthHandler) ResendVerificationEmail(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save email verification OTP"})
 		return
 	}
-	if err := sendVerificationEmail(user.Email, verificationToken); err != nil {
+	if err := sendVerificationEmail(user.Email, verificationToken, "Kode OTP Verifikasi SAFE", "Verifikasi Pendaftaran", "Berikut adalah kode OTP verifikasi pendaftaran akun SAFE Anda yang baru:"); err != nil {
 		log.Printf("Failed to resend verification email to %s: %v", user.Email, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kode OTP gagal dikirim. Hubungi admin aplikasi."})
 		return
@@ -490,16 +490,13 @@ func generateEmailVerificationOTP() (string, error) {
 	return fmt.Sprintf("%06d", n.Int64()), nil
 }
 
-func sendVerificationEmail(to string, token string) error {
-	host := os.Getenv("SMTP_HOST")
-	port := os.Getenv("SMTP_PORT")
-	username := os.Getenv("SMTP_USERNAME")
-	password := os.Getenv("SMTP_PASSWORD")
+func sendVerificationEmail(to string, token string, subject string, title string, description string) error {
+	apiKey := os.Getenv("BREVO_API_KEY")
 	from := os.Getenv("SMTP_FROM")
 
-	if host == "" || port == "" || username == "" || password == "" || from == "" {
-		log.Printf("Email verification OTP for %s: %s", to, token)
-		return fmt.Errorf("SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM must be configured")
+	if apiKey == "" || from == "" {
+		log.Printf("Email verification OTP for %s: %s (Subject: %s)", to, token, subject)
+		return fmt.Errorf("BREVO_API_KEY and SMTP_FROM must be configured")
 	}
 
 	subject := "Kode OTP Verifikasi SAFE"
@@ -595,57 +592,33 @@ func sendMailWithTimeout(host string, port string, auth smtp.Auth, from string, 
 		conn, err = dialer.Dial("tcp", addr)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal email payload: %w", err)
 	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(timeout))
 
-	client, err := smtp.NewClient(conn, host)
+	url := "https://api.brevo.com/v3/smtp/email"
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return err
-	}
-	defer client.Close()
-
-	if port != "465" {
-		if ok, _ := client.Extension("STARTTLS"); !ok {
-			return fmt.Errorf("smtp server does not support STARTTLS")
-		}
-		config := &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}
-		if err := client.StartTLS(config); err != nil {
-			return err
-		}
+		return fmt.Errorf("failed to create http request: %w", err)
 	}
 
-	if auth != nil {
-		if ok, _ := client.Extension("AUTH"); ok {
-			if err := client.Auth(auth); err != nil {
-				return err
-			}
-		}
-	}
+	req.Header.Set("api-key", apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 
-	if err := client.Mail(from); err != nil {
-		return err
-	}
-	for _, recipient := range to {
-		if err := client.Rcpt(recipient); err != nil {
-			return err
-		}
-	}
-
-	writer, err := client.Data()
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to make request to Brevo API: %w", err)
 	}
-	if _, err := writer.Write(msg); err != nil {
-		_ = writer.Close()
-		return err
-	}
-	if err := writer.Close(); err != nil {
-		return err
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var errResp map[string]interface{}
+		_ = json.NewDecoder(resp.Body).Decode(&errResp)
+		return fmt.Errorf("brevo API returned status %s: %v", resp.Status, errResp)
 	}
 
-	return client.Quit()
+	return nil
 }
 
 // Trusted Devices & Login OTP
@@ -725,7 +698,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	}
 
 	go func(email, token string) {
-		if err := sendPasswordResetEmail(email, token); err != nil {
+		if err := sendVerificationEmail(email, token); err != nil {
 			log.Printf("Failed to send password reset OTP email to %s: %v", email, err)
 		}
 	}(user.Email, otp)
@@ -757,7 +730,7 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	var req struct {
 		Email       string `json:"email" binding:"required,email"`
 		OTP         string `json:"otp" binding:"required,len=6"`
-		NewPassword string `json:"new_password" binding:"required,min=6"`
+		NewPassword string `json:"new_password" binding:"required,min=8"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
