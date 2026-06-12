@@ -117,7 +117,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	go func(email, token string) {
-		if err := sendVerificationEmail(email, token, "Kode OTP Verifikasi SAFE", "Verifikasi Pendaftaran", "Berikut adalah kode verifikasi OTP Anda:"); err != nil {
+		if err := sendVerificationEmail(email, token, "Kode OTP Verifikasi SAFE", "Verifikasi Pendaftaran", "Terima kasih telah mendaftar di SAFE. Masukkan kode berikut pada aplikasi untuk melanjutkan pendaftaran:"); err != nil {
 			log.Printf("Failed to send verification email to %s: %v", email, err)
 		}
 	}(user.Email, verificationToken)
@@ -246,7 +246,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	go func(email, token string) {
-		if err := sendVerificationEmail(email, token, "Kode OTP Login SAFE", "Verifikasi Login", "Berikut adalah kode verifikasi OTP Anda:"); err != nil {
+		if err := sendVerificationEmail(email, token, "Kode OTP Login SAFE", "Verifikasi Login", "Kami menerima permintaan masuk ke akun SAFE Anda. Masukkan kode berikut pada aplikasi untuk melanjutkan:"); err != nil {
 			log.Printf("Failed to send login OTP email to %s: %v", email, err)
 		}
 	}(user.Email, otp)
@@ -319,7 +319,7 @@ func (h *AuthHandler) ResendVerificationEmail(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save email verification OTP"})
 		return
 	}
-	if err := sendVerificationEmail(user.Email, verificationToken, "Kode OTP Verifikasi SAFE", "Verifikasi Pendaftaran", "Berikut adalah kode verifikasi OTP Anda:"); err != nil {
+	if err := sendVerificationEmail(user.Email, verificationToken, "Kode OTP Verifikasi SAFE", "Verifikasi Pendaftaran", "Terima kasih telah mendaftar di SAFE. Masukkan kode berikut pada aplikasi untuk melanjutkan pendaftaran:"); err != nil {
 		log.Printf("Failed to resend verification email to %s: %v", user.Email, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Kode OTP gagal dikirim. Hubungi admin aplikasi."})
 		return
@@ -549,22 +549,40 @@ func sendVerificationEmail(to string, token string, subject string, title string
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OTP</title>
+  <title>Verifikasi SAFE</title>
 </head>
 <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #ffffff; color: #111111;">
-  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; padding: 20px 0;">
+  <table width="100%%" border="0" cellspacing="0" cellpadding="0" style="background-color: #ffffff; padding: 40px 20px; max-width: 600px; margin: 0 auto;">
     <tr>
-      <td align="left" style="padding: 0 20px;">
-        <p style="font-size: 16px; line-height: 1.5; color: #111111; margin: 0 0 20px 0;">%s</p>
-        <div style="font-family: monospace; font-size: 32px; font-weight: bold; color: #111111; letter-spacing: 4px; margin-bottom: 20px;">%s</div>
-        <p style="font-size: 14px; line-height: 1.5; color: #666666; margin: 0;">Kode ini berlaku selama 5 menit. Jangan bagikan kode ini kepada siapa pun.</p>
+      <td align="left">
+        <!-- Header: SAFE Text -->
+        <div style="font-size: 24px; font-weight: 900; color: #DC2626; letter-spacing: 1px; margin-bottom: 24px;">SAFE</div>
+        
+        <!-- Title -->
+        <h2 style="font-size: 20px; font-weight: bold; color: #111111; margin: 0 0 12px 0;">%s</h2>
+        
+        <!-- Description -->
+        <p style="font-size: 14px; line-height: 1.6; color: #333333; margin: 0 0 24px 0;">%s</p>
+        
+        <!-- Label: KODE VERIFIKASI -->
+        <div style="font-size: 11px; font-weight: bold; color: #666666; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px;">KODE VERIFIKASI</div>
+        
+        <!-- OTP Code Box (Rectangular shape) -->
+        <div style="display: inline-block; background-color: #F3F4F6; border: 1px solid #E5E7EB; border-radius: 8px; padding: 12px 32px; font-family: monospace; font-size: 32px; font-weight: bold; color: #111111; letter-spacing: 4px; margin-bottom: 24px; text-align: center;">
+          %s
+        </div>
+        
+        <!-- Footer Note -->
+        <p style="font-size: 13px; line-height: 1.5; color: #666666; margin: 0; border-top: 1px solid #EEEEEE; padding-top: 20px;">
+          Kode ini berlaku selama 5 menit. Jika Anda tidak merasa meminta perubahan ini, mohon abaikan email ini.
+        </p>
       </td>
     </tr>
   </table>
 </body>
 </html>`
 
-	body := fmt.Sprintf(htmlTemplate, description, token)
+	body := fmt.Sprintf(htmlTemplate, title, description, token)
 
 	payload := map[string]interface{}{
 		"sender": map[string]string{
@@ -688,7 +706,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	}
 
 	go func(email, token string) {
-		if err := sendVerificationEmail(email, token, "Reset Password SAFE", "Reset Password", "Berikut adalah kode OTP untuk mereset password Anda:"); err != nil {
+		if err := sendVerificationEmail(email, token, "Reset Password SAFE", "Reset Password", "Kami menerima permintaan untuk mereset kata sandi akun SAFE Anda. Masukkan kode berikut pada aplikasi untuk melanjutkan:"); err != nil {
 			log.Printf("Failed to send password reset OTP email to %s: %v", email, err)
 		}
 	}(user.Email, otp)
