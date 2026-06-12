@@ -49,6 +49,12 @@ func (h *SosHandler) TriggerSos(c *gin.Context) {
 		return
 	}
 
+	// Validasi range koordinat GPS
+	if req.Latitude < -90 || req.Latitude > 90 || req.Longitude < -180 || req.Longitude > 180 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Koordinat GPS tidak valid"})
+		return
+	}
+
 	// Check if there is already an active SOS
 	activeEvent, err := h.sosRepo.GetActiveEvent(userID)
 	if err != nil {
@@ -211,6 +217,12 @@ func (h *SosHandler) TrackLocation(c *gin.Context) {
 	var req model.TrackLocationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validasi range koordinat GPS
+	if req.Latitude < -90 || req.Latitude > 90 || req.Longitude < -180 || req.Longitude > 180 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Koordinat GPS tidak valid"})
 		return
 	}
 

@@ -36,6 +36,35 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// Validasi nomor telepon
+	phone := strings.TrimSpace(req.PhoneNumber)
+	if len(phone) < 9 || len(phone) > 15 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Nomor telepon harus terdiri dari 9 hingga 15 karakter"})
+		return
+	}
+	for i, r := range phone {
+		if i == 0 && r == '+' {
+			continue
+		}
+		if r < '0' || r > '9' {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Nomor telepon hanya boleh berisi angka"})
+			return
+		}
+	}
+
+	// Validasi golongan darah
+	var bloodType string
+	if req.BloodType != nil {
+		bt := strings.ToUpper(strings.TrimSpace(*req.BloodType))
+		if bt != "" && bt != "A" && bt != "B" && bt != "AB" && bt != "O" &&
+			bt != "A+" && bt != "A-" && bt != "B+" && bt != "B-" &&
+			bt != "AB+" && bt != "AB-" && bt != "O+" && bt != "O-" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Golongan darah tidak valid. Gunakan: A, B, AB, O, atau dengan rhesus (+/-)"})
+			return
+		}
+		bloodType = bt
+	}
+
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	if err := h.repo.PrepareEmailForRegistration(email); err != nil {
 		if errors.Is(err, repository.ErrEmailAlreadyRegistered) {
@@ -61,14 +90,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		Name:          req.Name,
 		Email:         email,
 		Password:      string(hashed),
-		PhoneNumber:   req.PhoneNumber,
+		PhoneNumber:   phone,
 		EmailVerified: false,
 	}
 
-	var bloodType, medicalNotes string
-	if req.BloodType != nil {
-		bloodType = *req.BloodType
-	}
+	var medicalNotes string
 	if req.MedicalNotes != nil {
 		medicalNotes = *req.MedicalNotes
 	}
@@ -342,7 +368,23 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	if err := h.repo.UpdateProfile(userID, req.Name, req.PhoneNumber, req.ProfileImage); err != nil {
+	// Validasi nomor telepon
+	phone := strings.TrimSpace(req.PhoneNumber)
+	if len(phone) < 9 || len(phone) > 15 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Nomor telepon harus terdiri dari 9 hingga 15 karakter"})
+		return
+	}
+	for i, r := range phone {
+		if i == 0 && r == '+' {
+			continue
+		}
+		if r < '0' || r > '9' {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Nomor telepon hanya boleh berisi angka"})
+			return
+		}
+	}
+
+	if err := h.repo.UpdateProfile(userID, req.Name, phone, req.ProfileImage); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memperbarui profil"})
 		return
 	}
@@ -459,6 +501,12 @@ func (h *AuthHandler) UpdateLocation(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validasi range koordinat GPS
+	if *req.Latitude < -90 || *req.Latitude > 90 || *req.Longitude < -180 || *req.Longitude > 180 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Koordinat GPS tidak valid"})
 		return
 	}
 

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 	"safe-backend/internal/model"
 	"safe-backend/internal/repository"
 
@@ -55,9 +56,18 @@ func (h *MedicalProfileHandler) UpsertMedicalProfile(c *gin.Context) {
 		return
 	}
 
+	// Validasi golongan darah
+	bloodType := strings.ToUpper(strings.TrimSpace(req.BloodType))
+	if bloodType != "" && bloodType != "A" && bloodType != "B" && bloodType != "AB" && bloodType != "O" &&
+		bloodType != "A+" && bloodType != "A-" && bloodType != "B+" && bloodType != "B-" &&
+		bloodType != "AB+" && bloodType != "AB-" && bloodType != "O+" && bloodType != "O-" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Golongan darah tidak valid. Gunakan: A, B, AB, O, atau dengan rhesus (+/-)"})
+		return
+	}
+
 	profile := &model.MedicalProfile{
 		UserID:       userID,
-		BloodType:    req.BloodType,
+		BloodType:    bloodType,
 		MedicalNotes: req.MedicalNotes,
 	}
 
