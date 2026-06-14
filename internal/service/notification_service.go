@@ -72,9 +72,12 @@ func NewRealFcmNotificationService(opt option.ClientOption) (*RealFcmNotificatio
 func (s *RealFcmNotificationService) SendPush(token, title, body string, data map[string]string) error {
 	ctx := context.Background()
 
-	message := &messaging.Message{
-		Token: token,
-		Notification: &messaging.Notification{
+	channelID := "general_notification_channel_v2"
+	sound := "default"
+
+	var notificationPayload *messaging.Notification
+	if data == nil || data["type"] != "sos_alert" {
+		notificationPayload = &messaging.Notification{
 			Title: title,
 			Body:  body,
 		}
