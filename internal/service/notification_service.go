@@ -72,6 +72,14 @@ func NewRealFcmNotificationService(opt option.ClientOption) (*RealFcmNotificatio
 func (s *RealFcmNotificationService) SendPush(token, title, body string, data map[string]string) error {
 	ctx := context.Background()
 
+	channelID := "general_notification_channel_v2"
+	sound := "default"
+
+	if data != nil && data["type"] == "sos_alert" {
+		channelID = "emergency_call_channel_v5"
+		sound = "alarm_sound"
+	}
+
 	message := &messaging.Message{
 		Token: token,
 		Notification: &messaging.Notification{
@@ -82,8 +90,8 @@ func (s *RealFcmNotificationService) SendPush(token, title, body string, data ma
 		Android: &messaging.AndroidConfig{
 			Priority: "high",
 			Notification: &messaging.AndroidNotification{
-				ChannelID: "emergency_channel_id_v2", // Harus sama dengan Channel ID di Flutter
-				Sound:     "alarm_sound",             // Membaca file alarm_sound.mp3 di res/raw
+				ChannelID: channelID,
+				Sound:     sound,
 			},
 		},
 	}

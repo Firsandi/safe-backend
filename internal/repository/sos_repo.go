@@ -108,7 +108,7 @@ func (r *SosRepository) GetEventDetail(sosID string) (*model.SosEventDetailDTO, 
 		ORDER BY sa.acknowledged_at ASC`, 
 		sosID,
 	)
-	if err != nil {
+	if err != nil || responders == nil {
 		responders = []model.SosAcknowledgement{}
 	}
 	detail.Responders = responders
@@ -179,6 +179,7 @@ func (r *SosRepository) GetReceivedHistory(userID string) ([]model.SosEventDetai
 		} else {
 			events[i].TrackingPoints = []model.SosTracking{}
 		}
+		events[i].Responders = []model.SosAcknowledgement{}
 	}
 
 	return events, nil
