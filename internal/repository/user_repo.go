@@ -121,7 +121,7 @@ func (r *UserRepository) HasActiveEmailVerificationToken(userID string) (bool, e
 	return exists, err
 }
 
-func (r *UserRepository) CanResendEmailVerificationToken(userID string) (bool, error) {
+func (r *UserRepository) CanResendEmailVerificationToken(userID string) (bool, int, error) {
 	var lastCreatedAt sql.NullTime
 	err := r.db.Get(&lastCreatedAt,
 		`SELECT created_at
@@ -133,14 +133,19 @@ func (r *UserRepository) CanResendEmailVerificationToken(userID string) (bool, e
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return true, nil
+			return true, 0, nil
 		}
-		return false, err
+		return false, 0, err
 	}
 	if !lastCreatedAt.Valid {
-		return true, nil
+		return true, 0, nil
 	}
-	return lastCreatedAt.Time.Before(time.Now().Add(-3 * time.Minute)), nil
+	nextAvailable := lastCreatedAt.Time.Add(3 * time.Minute)
+	remaining := time.Until(nextAvailable)
+	if remaining <= 0 {
+		return true, 0, nil
+	}
+	return false, int(remaining.Seconds()), nil
 }
 
 func (r *UserRepository) GetEmailVerificationTiming(email string) (*EmailVerificationTiming, error) {

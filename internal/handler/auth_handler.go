@@ -300,13 +300,25 @@ func (h *AuthHandler) ResendVerificationEmail(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "Email sudah terverifikasi. Silakan login."})
 		return
 	}
-	canResend, err := h.repo.CanResendEmailVerificationToken(user.UserID)
+	canResend, remainingSec, err := h.repo.CanResendEmailVerificationToken(user.UserID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengecek batas kirim ulang OTP"})
 		return
 	}
 	if !canResend {
-		c.JSON(http.StatusTooManyRequests, gin.H{"error": "Tunggu 3 menit sebelum meminta OTP baru."})
+		minutes := remainingSec / 60
+		seconds := remainingSec % 60
+		var timeStr string
+		if minutes > 0 {
+			if seconds > 0 {
+				timeStr = fmt.Sprintf("%d menit %d detik", minutes, seconds)
+			} else {
+				timeStr = fmt.Sprintf("%d menit", minutes)
+			}
+		} else {
+			timeStr = fmt.Sprintf("%d detik", seconds)
+		}
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("Tunggu %s sebelum meminta OTP baru.", timeStr)})
 		return
 	}
 
