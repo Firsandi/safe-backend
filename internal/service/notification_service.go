@@ -93,16 +93,21 @@ func (s *RealFcmNotificationService) SendPush(token, title, body string, data ma
 		sound = "alarm_sound"
 	}
 
+	var androidNotification *messaging.AndroidNotification
+	if data == nil || data["type"] != "sos_alert" {
+		androidNotification = &messaging.AndroidNotification{
+			ChannelID: channelID,
+			Sound:     sound,
+		}
+	}
+
 	message := &messaging.Message{
 		Token:        token,
 		Notification: notificationPayload,
 		Data:         data,
 		Android: &messaging.AndroidConfig{
-			Priority: "high",
-			Notification: &messaging.AndroidNotification{
-				ChannelID: channelID,
-				Sound:     sound,
-			},
+			Priority:     "high",
+			Notification: androidNotification,
 		},
 	}
 
