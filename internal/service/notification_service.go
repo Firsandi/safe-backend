@@ -72,21 +72,28 @@ func NewRealFcmNotificationService(opt option.ClientOption) (*RealFcmNotificatio
 func (s *RealFcmNotificationService) SendPush(token, title, body string, data map[string]string) error {
 	ctx := context.Background()
 
-	channelID := "general_notification_channel_v2"
-	sound := "default"
-
-	if data != nil && data["type"] == "sos_alert" {
-		channelID = "emergency_call_channel_v5"
-		sound = "alarm_sound"
-	}
-
 	message := &messaging.Message{
 		Token: token,
 		Notification: &messaging.Notification{
 			Title: title,
 			Body:  body,
-		},
-		Data: data,
+		}
+	} else {
+		// For SOS alerts, we send a data-only notification on Android to allow the app's background
+		// handler to play custom alarm sounds. Ensure title and body are in the data map.
+		if data == nil {
+			data = make(map[string]string)
+		}
+		data["title"] = title
+		data["body"] = body
+		channelID = "emergency_call_channel_v5"
+		sound = "alarm_sound"
+	}
+
+	message := &messaging.Message{
+		Token:        token,
+		Notification: notificationPayload,
+		Data:         data,
 		Android: &messaging.AndroidConfig{
 			Priority: "high",
 			Notification: &messaging.AndroidNotification{

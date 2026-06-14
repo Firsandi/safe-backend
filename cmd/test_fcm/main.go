@@ -60,16 +60,14 @@ func main() {
 	// 4. Construct message (matching the channels defined in the Flutter application)
 	message := &messaging.Message{
 		Token: fcmToken,
-		Notification: &messaging.Notification{
-			Title: title,
-			Body:  body,
-		},
 		Data: map[string]string{
 			"click_action": "FLUTTER_NOTIFICATION_CLICK",
 			"sos_id":       "test-123-sos-id",
 			"type":         "sos_alert",
 			"latitude":     "-6.200000",
 			"longitude":    "106.816666",
+			"title":        title,
+			"body":         body,
 		},
 		Android: &messaging.AndroidConfig{
 			Priority: "high",
