@@ -72,47 +72,54 @@ func NewRealFcmNotificationService(opt option.ClientOption) (*RealFcmNotificatio
 func (s *RealFcmNotificationService) SendPush(token, title, body string, data map[string]string) error {
 	ctx := context.Background()
 
-	channelID := "general_notification_channel_v2"
-	sound := "default"
-
-	var notificationPayload *messaging.Notification
-	if data == nil || data["type"] != "sos_alert" {
-		notificationPayload = &messaging.Notification{
-			Title: title,
-			Body:  body,
-		}
-	} else {
-		// For SOS alerts, we send a data-only notification on Android to allow the app's background
-		// handler to play custom alarm sounds. Ensure title and body are in the data map.
-		if data == nil {
-			data = make(map[string]string)
-		}
-		data["title"] = title
-		data["body"] = body
-		channelID = "emergency_call_channel_v5"
-		sound = "alarm_sound"
+	// Clone the map to avoid data races when modifying keys concurrently
+	dataCopy := make(map[string]string)
+	for k, v := range data {
+		dataCopy[k] = v
 	}
 
-	var androidNotification *messaging.AndroidNotification
-	if data == nil || data["type"] != "sos_alert" {
-		androidNotification = &messaging.AndroidNotification{
-			ChannelID: channelID,
-			Sound:     sound,
-		}
+	// Ensure title and body are always in the data map for background parser
+	dataCopy["title"] = title
+	dataCopy["body"] = body
+
+	// Always send a notification payload so the OS reliably displays it in the tray
+	notificationPayload := &messaging.Notification{
+		Title: title,
+		Body:  body,
+	}
+
+	// Use general notification channel (default sound) for all tray notifications
+	androidConfig := &messaging.AndroidConfig{
+		Priority: "high", // Keep high priority so it delivers instantly
+		Notification: &messaging.AndroidNotification{
+			ChannelID: "general_notification_channel_v2",
+			Sound:     "default",
+		},
+	}
+
+	apnsConfig := &messaging.APNSConfig{
+		Headers: map[string]string{
+			"apns-priority": "10",
+		},
+		Payload: &messaging.APNSPayload{
+			Aps: &messaging.Aps{
+				ContentAvailable: true,
+				Sound:            "default",
+			},
+		},
 	}
 
 	message := &messaging.Message{
 		Token:        token,
 		Notification: notificationPayload,
-		Data:         data,
-		Android: &messaging.AndroidConfig{
-			Priority:     "high",
-			Notification: androidNotification,
-		},
+		Data:         dataCopy,
+		Android:      androidConfig,
+		APNS:         apnsConfig,
 	}
 
 	res, err := s.client.Send(ctx, message)
 	if err != nil {
+		log.Printf("[FCM ERROR] Gagal mengirim push ke token %s: %v", token, err)
 		return fmt.Errorf("gagal mengirim push via FCM: %v", err)
 	}
 
